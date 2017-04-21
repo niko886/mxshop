@@ -3,3 +3,7 @@ conf.py
 *.pyc
 *.log
 
+prices
+cache
+
+

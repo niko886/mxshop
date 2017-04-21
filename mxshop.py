@@ -61,11 +61,14 @@ log.addHandler(console)
 
 _CACHE_PATH = os.path.join(tempfile.gettempdir(), 'mxshop', 'cache')
 
-try:
-    os.makedirs(_CACHE_PATH)
-except OSError as oe:    
-    if '[Errno 17] File exists: ' not in str(oe):
-        raise oe
+
+def initCacheFolder(cachePath):
+
+    try:
+        os.makedirs(cachePath)
+    except OSError as oe:    
+        if '[Errno 17] File exists: ' not in str(oe):
+            raise oe
     
     
 class HttpPageCache():
@@ -149,7 +152,7 @@ class Xml2003File():
     
     def __init__(self):
         
-        stubFileData = FileHlp(['prices', 'test', 'minimal.xml'], 'r').read()
+        stubFileData = FileHlp(['templates', 'minimal.xml'], 'r').read()
         
         self._soup = BeautifulSoup(stubFileData, "lxml-xml")
         
@@ -263,6 +266,7 @@ class MXShopZhovtuha():
                     'Защита | Защита спины': 'Защита | Груди и спины',
                     'Защита | Наколенники': 'Защита | Коленей',
                     'Защита | Налокотники': 'Защита | Локтей',
+                    'Защита | Мотоналокотники': 'Защита | Локтей',
                     'Защита | Защита шеи': 'Защита | Шеи',
                     'Защита | Защитные шорты': 'Защита | Шорты',
                     'Экипировка | Кросс | Джерси': 'Форма | Джерси',
@@ -332,10 +336,23 @@ class MXShopZhovtuha():
     
     _possibleBrands = [ps.upper() for ps in _possibleBrands]
     
+    
+    def assertDirectory(self, dirPath):
+        
+        try:
+            os.makedirs(dirPath)
+        except OSError as oe:    
+            if '[Errno 17] File exists: ' not in str(oe):
+                raise oe
+
+    
     def __init__(self, **kw):
     
         self._pricesOrigDir = os.path.join('prices', 'orig', self._d) 
         self._pricesResutDir = os.path.join('prices', 'result', self._d)
+        
+        self.assertDirectory(self._pricesOrigDir)
+        self.assertDirectory(self._pricesResutDir)
         
         self._priceFileRE = '^Остатки.*?-(\d+).(\d+).(\d+).xls$'  # example: Остатки-29.06.16.xls
         self._priceFileREidx = {'year': 3, 'month': 2, 'day': 1, 'hour': 0, 'minute': 0, 'second': 0}
@@ -490,7 +507,8 @@ class MXShopZhovtuha():
         assert(row1[columnProduct] == 'Товар')
         assert(row1[columnSku] == 'Артикул')
         assert(row1[columnPriceRetail] == 'Розничная цена')
-        assert(row1[columnPriceDealer] == 'Оптовая цена')
+        #assert(row1[columnPriceDealer] == 'Оптовая цена') FIXME: ?
+        assert(row1[columnPriceDealer] == 'Оптовая цена' or row1[columnPriceDealer] == 'Розничная цена')
         assert(row1[columnBalance] == 'Склад (оптовый)')
                     
         saleOffCount = 0
@@ -3159,7 +3177,7 @@ class OFF_testConvertToXls2003(unittest.TestCase):
 
 def ProcessMain(dealer, **kw):
     
-    log.info('%s cycle test' % dealer._d)        
+    log.info('%s processing...' % dealer._d)        
     
     remoteXmlFile = dealer.WebAdminGetRemoteXmlName()
             
@@ -3227,13 +3245,25 @@ if __name__ == "__main__":
                       help="Build all prices")
 
     parser.add_option("-p", "--prices=USER1,USER2,...", type="string",
-                      action="store", dest="buildPrices", default="ALL",
-                      help="Build prices for specified user. Use -pa to build all")
-# 
+                      action="store", dest="buildPrices", default="none",
+                      help="Build prices for specified user. Use `-p all` to build all")
+
     parser.add_option("-t", "--useTestingServer",
                       action="store_true", dest="useTestingServer", default=False,
                       help="Use testing server instead of production")
 
+    parser.add_option("-n", "--noUploadToAdmin",
+                      action="store_true", dest="noUploadToAdmin", default=False,
+                      help="Do not iteract with admin panel")
+
+    parser.add_option("-c", "--cachePath", type="string",
+                      action="store", dest="cachePath", default='',
+                      help="change default program cache path")
+
+
+
+
+# TODO:
 #     parser.add_option("-w", "--watermark=USER1,USER2,...", type="string",
 #                       action="store", dest="watermark", default=False,
 #                       help="Build prices for specified user. Use -wa to buid")
@@ -3245,10 +3275,15 @@ if __name__ == "__main__":
 
     (options, args) = parser.parse_args()
     
-    if not len(args):
-        parser.print_help()
+    if options.cachePath:
+        _CACHE_PATH = options.cachePath
         
-
+    initCacheFolder(_CACHE_PATH)
+    
+    if options.buildPrices == 'none':
+        parser.print_help()
+        exit(1)
+        
     if options.verbose:
         console.setLevel(logging.DEBUG)   
                  
@@ -3256,7 +3291,7 @@ if __name__ == "__main__":
         
         if 'zhov' in options.buildPrices.split(','):
             dealer = MXShopZhovtuha(useTestingServer=options.useTestingServer)
-            ProcessMain(dealer)
+            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin)
             
             del(dealer)
 
@@ -3264,7 +3299,7 @@ if __name__ == "__main__":
             
             dealer = MXShopKopyl(useTestingServer=options.useTestingServer)
             
-            ProcessMain(dealer)
+            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin)
             
             dealer.AddWaterMarkToAllImages()
                         
