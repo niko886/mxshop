@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel">
+  <RefModeR1C1/>
+ </ExcelWorkbook> 
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Font ss:FontName="Arial" x:CharSet="1"/>
+  </Style>
+  <Style ss:ID="s62">
+   <NumberFormat ss:Format="Fixed"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="sheet0">
+  <Table >
+   <Column ss:Width="69.75"/>
+   <Column ss:Width="162"/>
+   <Column ss:AutoFitWidth="0" ss:Width="318.75"/>
+   <Column ss:StyleID="s62" ss:Width="42" ss:Span="1"/>
+   <Column ss:Index="6" ss:StyleID="s62" ss:AutoFitWidth="0" ss:Width="122.25"/>
+   <Column ss:Width="42"/>
+   <Column ss:Width="84"/>
+   <Column ss:Width="183.75" ss:Span="1"/>
+   <Column ss:Index="11" ss:AutoFitWidth="0" ss:Width="34.5"/>
+   <Column ss:AutoFitWidth="0" ss:Width="69"/>
+   <Column ss:AutoFitWidth="0" ss:Width="26.25"/>
+   <Column ss:Hidden="1" ss:AutoFitWidth="0" ss:Width="78.75" ss:Span="1"/>
+   <Column ss:Index="16" ss:Hidden="1" ss:AutoFitWidth="0" ss:Width="183.75"
+    ss:Span="1"/>
+   <Column ss:Index="18" ss:Hidden="1" ss:AutoFitWidth="0" ss:Span="1"/>
+
+   <Row>
+    <Cell><Data ss:Type="String">sku</Data></Cell>
+    <Cell><Data ss:Type="String">product</Data></Cell>
+    <Cell><Data ss:Type="String">priceRetail</Data></Cell>
+    <Cell><Data ss:Type="String">priceDealer</Data></Cell>
+    <Cell><Data ss:Type="String">salePrice</Data></Cell>
+    <Cell><Data ss:Type="String">balance</Data></Cell>
+    <Cell><Data ss:Type="String">option</Data></Cell>
+    <Cell><Data ss:Type="String">categoryTgt</Data></Cell>
+    <Cell><Data ss:Type="String">brand</Data></Cell>
+    <Cell><Data ss:Type="String">productSEOUrl</Data></Cell>
+    <Cell><Data ss:Type="String">descriptionWeb</Data></Cell>
+    <Cell><Data ss:Type="String">imagesWeb</Data></Cell>
+    <Cell><Data ss:Type="String">productPlusHash</Data></Cell>
+    <Cell ss:Index="30"><Data ss:Type="String">images</Data></Cell>
+   </Row>
+   <Row>
+   </Row>
+  </Table>
+ </Worksheet>
+</Workbook>
