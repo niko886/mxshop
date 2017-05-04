@@ -1448,7 +1448,7 @@ class MXShopZhovtuha():
         tempDir = tempfile.gettempdir()
                     
         params = ['soffice', '--headless', 
-                              '--convert-to', 'xls', '--outdir', tempDir,
+                              '--convert-to', 'xls:MS Excel 97', '--outdir', tempDir,
                               fromPath]
         log.debug("running %s", ' '.join(params))
                 
