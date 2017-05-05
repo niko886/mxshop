@@ -1664,7 +1664,7 @@ class MXShopZhovtuha():
         
         ssh = paramiko.SSHClient() 
         
-        ssh.set_missing_host_key_policy(paramiko.WarningPolicy())                        
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())                        
             
         ssh.connect('uashared08.twinservers.net', port=21098, username=conf.SSH_LOGIN, 
                     password=conf.SSH_PASS)
