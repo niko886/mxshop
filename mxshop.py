@@ -1663,9 +1663,14 @@ class MXShopZhovtuha():
     def UploadToServer(self, localFile, remoteFile):
         
         ssh = paramiko.SSHClient() 
-        ssh.load_host_keys(os.path.expanduser(os.path.join("~", ".ssh", "known_hosts")))
         
-        ssh.connect('uashared08.twinservers.net', port=21098, username='mxshopk1')
+        try:
+            ssh.load_host_keys(os.path.expanduser(os.path.join("~", ".ssh", "known_hosts")))
+        except IOError:
+            log.warn("known_hosts does not exists?")            
+            
+        ssh.connect('uashared08.twinservers.net', port=21098, username=conf.SSH_LOGIN, password=conf.SSH_PASS)
+            
         sftp = ssh.open_sftp()
         
         log.info('uploading %s -> %s' % (localFile, remoteFile))
