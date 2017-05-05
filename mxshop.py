@@ -1660,15 +1660,21 @@ class MXShopZhovtuha():
         
         raise KeyError('can not map category ext: %s\n%s' % (categoryName, extInfo))
         
-    def UploadToServer(self, localFile, remoteFile):
+    def ConnectToServer(self):
         
         ssh = paramiko.SSHClient() 
-        
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())                        
-            
+        
         ssh.connect('uashared08.twinservers.net', port=21098, username=conf.SSH_LOGIN, 
                     password=conf.SSH_PASS)
-            
+        
+        return ssh
+
+        
+    def UploadToServer(self, localFile, remoteFile):
+        
+        ssh = self.ConnectToServer() 
+                        
         sftp = ssh.open_sftp()
         
         log.info('uploading %s -> %s' % (localFile, remoteFile))
@@ -1676,16 +1682,7 @@ class MXShopZhovtuha():
         sftp.put(localFile, remoteFile)
         sftp.close()
         ssh.close()
-        
-    def ConnectToServer(self):
-        
-        ssh = paramiko.SSHClient() 
-        ssh.load_host_keys(os.path.expanduser(os.path.join("~", ".ssh", "known_hosts")))
-        
-        ssh.connect('uashared08.twinservers.net', port=21098, username='mxshopk1')
-        
-        return ssh
-        
+                
     def DownloadFromServer(self, remoteFile, localFile):
 
         ssh = self.ConnectToServer()
