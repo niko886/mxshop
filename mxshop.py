@@ -1600,9 +1600,9 @@ class MXShopZhovtuha():
             
             failedCategories.sort()
         
-            log.error("categories not found: %s", ' '.join(failedCategories))
+            log.error("categories not found: %s", '; '.join(failedCategories))
             
-            raise RuntimeError("categories not found: %s", ' '.join(failedCategories))
+            raise RuntimeError("categories not found: %s", '; '.join(failedCategories))
         
                             
         # save to file
