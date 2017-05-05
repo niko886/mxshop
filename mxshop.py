@@ -1664,12 +1664,10 @@ class MXShopZhovtuha():
         
         ssh = paramiko.SSHClient() 
         
-        try:
-            ssh.load_host_keys(os.path.expanduser(os.path.join("~", ".ssh", "known_hosts")))
-        except IOError:
-            log.warn("known_hosts does not exists?")            
+        ssh.set_missing_host_key_policy(paramiko.WarningPolicy())                        
             
-        ssh.connect('uashared08.twinservers.net', port=21098, username=conf.SSH_LOGIN, password=conf.SSH_PASS)
+        ssh.connect('uashared08.twinservers.net', port=21098, username=conf.SSH_LOGIN, 
+                    password=conf.SSH_PASS)
             
         sftp = ssh.open_sftp()
         
