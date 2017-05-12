@@ -1847,7 +1847,7 @@ class MXShopZhovtuha():
                 # just skip the header
                 continue
         
-            s = re.search('The Product passed: Row ~= \d+ SKU = (.*?) Invalid price of product = 0', l)
+            s = re.search('The Product passed: Row ~= \d+ SKU = (.*?) Invalid price of product = ', l)
             if s:
                 log.info('[!] invalid price of product %s', s.group(1))
                 invalidPrice += 1
