@@ -741,7 +741,10 @@ class MXShopZhovtuha():
                 if txt:
                     categoryList.append(txt)
             
-            assert(categoryList)        
+            if not categoryList:
+                log.error('[motostyle] there is no category list for sku = %s' % element['sku'])
+                continue
+
             category = ' | '.join(categoryList)
             webElement['category'] = category
             
@@ -1763,7 +1766,7 @@ class MXShopZhovtuha():
         subprocess.check_call('cd %s; tar xvf %s.tar.bz2 > /dev/null; rm -rf %s.tar.bz2' % (
             _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
         
-        #self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
+        self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
          
         log.info('archiving again...')
         subprocess.check_call('cd %s; tar cfvj %s-w.tar.bz2 %s > /dev/null' % (
