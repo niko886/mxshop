@@ -741,7 +741,11 @@ class MXShopZhovtuha():
                 if txt:
                     categoryList.append(txt)
             
-            assert(categoryList)        
+            #assert(categoryList)
+            if not categoryList:
+                log.error('[motostyle] there is no category list for sku = %s' % element['sku'])
+                continue
+                    
             category = ' | '.join(categoryList)
             webElement['category'] = category
             
@@ -1763,7 +1767,7 @@ class MXShopZhovtuha():
         subprocess.check_call('cd %s; tar xvf %s.tar.bz2 > /dev/null; rm -rf %s.tar.bz2' % (
             _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
         
-        #self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
+        self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
          
         log.info('archiving again...')
         subprocess.check_call('cd %s; tar cfvj %s-w.tar.bz2 %s > /dev/null' % (
@@ -3113,6 +3117,33 @@ class OFF_testMakeUpXmlZhovtuha1(unittest.TestCase):
         
         log.info('file write ok: %s, currency: %f', pp, currencyRate)
                 
+
+class testMakeUpXmlKopyl2(unittest.TestCase):
+    
+    def runTest(self):
+        
+        zhov = MXShopKopyl()
+        
+        #priceData, fileName, currencyRate = zhov.DownloadCurrentPriceFromWeb() 
+        fileName = 'dealer_price_2017-06-02 14.11.40-2.xls'#'Остатки-23.02.17.xls'
+        
+        
+        pp = os.path.join('prices', 'orig', 'kopyl', fileName)
+        
+        #FileHlp(pp, 'w').write(priceData)
+        
+        log.info('file write ok: %s', pp)
+        
+        priceData = zhov.ReadPrice(pp)
+        
+        webData = zhov.GrabWebData(priceData)
+        self.assertTrue(webData)
+        
+        outFile = '/media/samba/tmp/out.xml'
+        
+        zhov.CreateXmlFile(priceData, webData, outFile, 27.5)
+
+
 
 class OFF_testMakeUpXmlZhovtuha2(unittest.TestCase):
     
