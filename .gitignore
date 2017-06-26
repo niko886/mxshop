@@ -4,6 +4,17 @@ conf.py
 *.log
 
 prices
-cache
+cache*
+
+.project
+.pydevproject
+.settings
+
+Dockerfile
+
+*.xls
+*.xml
+
+
 
 
