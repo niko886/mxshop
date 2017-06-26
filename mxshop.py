@@ -2,15 +2,11 @@
 # -*- coding: utf8 -*-
 
 
-import sys
-import os, re, shutil, hashlib, urllib, subprocess, json
+import sys, os, re, shutil, hashlib, urllib, subprocess, json, imaplib, email, base64, requests, sqlite3, copy
 import mechanize
 import xlrd
-import requests
 import paramiko
 from bs4 import BeautifulSoup, element
-import sqlite3
-import copy
 
 
 import conf
@@ -534,7 +530,7 @@ class MXShopZhovtuha():
         columnPriceDealer = 3
         columnBalance = 4
         
-        
+            
         if row1[3] == 'Акционная цена со скидкой':
             
             log.info('[!] price with sale off column detected')
@@ -740,13 +736,7 @@ class MXShopZhovtuha():
                 txt = span.text.strip()
                 if txt:
                     categoryList.append(txt)
-            
-            
-            if not categoryList:
-                log.error('[motostyle] there is no category list for sku = %s' % element['sku'])
-                assert(categoryList)
-                continue
-            
+                        
             category = ' | '.join(categoryList)
             webElement['category'] = category
             
@@ -787,6 +777,14 @@ class MXShopZhovtuha():
                         raise WebSearchSkuNotMatched('[motostyle] sku not matched "%s" != "%s"' % (origSku, webSku)) 
             else:
                 webElement['sku'] = webSku
+
+            # assert category list
+            
+            if not categoryList:
+                log.error('[motostyle] there is no category list for sku = %s' % element['sku'])
+                assert(categoryList)
+                continue
+
             
             # find description
             
@@ -1317,8 +1315,77 @@ class MXShopZhovtuha():
         
         raise RuntimeError("unknown page result, please check last .html files")
 
-  
+
     def DownloadCurrentPriceFromWeb(self):
+
+        from email.header import decode_header
+        
+        log.info('logging to google (imap)...')
+        
+        imapSsl = imaplib.IMAP4_SSL('imap.gmail.com', 993)
+        imapSsl.login(conf.GMAIL_LOGIN, conf.GMAIL_PASS)
+        imapSsl.select()
+        
+        typ, data = imapSsl.search(None, '(FROM "%s")' % conf.GMAIL_SEARCH_FROM)
+        
+        typ, data = imapSsl.fetch(data[0].split()[-1], '(RFC822)') 
+        
+        msg = email.message_from_string(data[0][1])
+        
+        fileName = ''
+        fileData = ''
+        messageText = ''
+        
+        for part in msg.walk():
+            
+            if part.get_content_type() == 'text/plain':
+                
+                log.debug('text/plain:')
+                
+                messageText = str(part.get_payload(decode=True).decode(part.get_content_charset()))
+                messageText = messageText.strip()
+                
+                log.debug(messageText) 
+
+                 
+            if part.get_content_type() == 'application/vnd.ms-excel':
+                
+                fileName = part.get_filename()
+                if decode_header(fileName)[0][1] is not None:
+                    fileName = decode_header(fileName)[0][0].decode(decode_header(fileName)[0][1])
+                
+                fileName = str(fileName)            
+                log.debug(fileName)
+                
+                
+                fileData = part.get_payload(decode=True)
+                            
+        imapSsl.close()
+        imapSsl.logout()
+    
+        assert(fileName)
+        assert(fileData)   
+        assert(messageText)
+
+        # get currency rate
+        
+        currencyRate = 0
+        s = re.search('Курс (\d+[,\.]\d+)', messageText, re.MULTILINE)
+        if s:
+            currencyRate = float(s.group(1).replace(',', '.'))
+            assert(currencyRate > 20 and currencyRate < 35)
+            log.info('currency = %f', currencyRate)
+        else:
+            raise ValueError('currency not found, text: """%s"""' % messageText)             
+            
+        
+        FileHlp([_CACHE_PATH, fileName], 'w').write(fileData)
+        
+        return fileData, str(fileName), currencyRate
+        
+
+  
+    def DownloadCurrentPriceFromWeb0(self):
     
         br = mechanize.Browser()
          
@@ -1327,7 +1394,7 @@ class MXShopZhovtuha():
         br.set_handle_referer(True)
         br.set_handle_robots(False)
            
-        log.info('logging in google...')
+        log.info('logging to google...')
            
         url1 = 'https://accounts.google.com/ServiceLogin?service=mail&passive=true&rm=false&continue=https://mail.google.com/mail/&ss=1&scc=1&ltmpl=default&ltmplcache=2&emr=1&osid=1' 
            
