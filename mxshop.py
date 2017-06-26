@@ -741,11 +741,12 @@ class MXShopZhovtuha():
                 if txt:
                     categoryList.append(txt)
             
-            #assert(categoryList)
+            
             if not categoryList:
                 log.error('[motostyle] there is no category list for sku = %s' % element['sku'])
+                assert(categoryList)
                 continue
-                    
+            
             category = ' | '.join(categoryList)
             webElement['category'] = category
             
