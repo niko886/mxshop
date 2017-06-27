@@ -144,13 +144,70 @@ class FileHlp():
         return data
     
 
+class Xml2003FileStub():
+    
+    _data = ''
+    
+    
+    def escape(self, s, quote=False):
+        
+        s = s.replace("&", "&amp;") # Must be done first!
+        s = s.replace("<", "&lt;")
+        s = s.replace(">", "&gt;")
+        if quote:
+            s = s.replace('"', "&quot;")
+            
+        return s
+    
+    def __init__(self):
+        
+        pass
+    
+    def addrow(self, row):
+        
+        
+        dummyRow = ' <Row>\n%s </Row>\n'
+        dummyCell = '  <Cell><Data ss:Type="String">%s</Data></Cell>\n'
+        
+        
+        
+        cells = ''
+        
+        for r in row:
+            cells += dummyCell % self.escape(str(r))
+            
+        self._data += dummyRow % cells
+            
+
+    def write(self, filePath):
+        
+        stubFileData = FileHlp(['templates', 'minimal.xml'], 'r').read()        
+        stubFileData = stubFileData.replace('<!--add-->', self._data)
+                
+        FileHlp(filePath, 'w').write(stubFileData)  
+        
+        log.info("xml file saved: %s", str(filePath))
+      
+    def getdata(self):
+    
+        stubFileData = FileHlp(['templates', 'minimal.xml'], 'r').read()        
+        stubFileData = stubFileData.replace('<!--add-->', self._data)
+        
+        return str(stubFileData)
+
+            
+
 class Xml2003File():
     
     def __init__(self):
         
         stubFileData = FileHlp(['templates', 'minimal.xml'], 'r').read()
         
-        self._soup = BeautifulSoup(stubFileData, "lxml-xml")
+        self._soup = BeautifulSoup(stubFileData, 'lxml-xml') 
+
+        log.info('---')        
+        log.info(self._soup.Row)
+        log.info('---')
         
         self._row = copy.copy(self._soup.Row)
         self._cell = copy.copy(self._row.contents[1])
@@ -170,6 +227,7 @@ class Xml2003File():
             
             c.Data.string = hh
             rowOrig.append(c)
+            rowOrig.append('\n')
         
         
         
@@ -179,7 +237,7 @@ class Xml2003File():
         cell = copy.copy(self._cell)
             
         row.clear()
-        row.append('\r\n')
+        row.append('\n')
         
         numberIdx = [4, 5]
         
@@ -195,28 +253,31 @@ class Xml2003File():
             c = copy.copy(cell)
             
             
-            if i + 1 in numberIdx:
-                if rowEl:              
-                    c.Data['ss:Type'] = "Number"
-                    
-            if i + 1 in intIdx:
-                if rowEl:
-                    rowEl = str(int(float(rowEl))) # "1.0" case
+#             if i + 1 in numberIdx:
+#                 if rowEl:              
+#                     c.Data['ss:Type'] = "Number"
+#                     
+#             if i + 1 in intIdx:
+#                 if rowEl:
+#                     rowEl = str(int(float(rowEl))) # "1.0" case
                 
             c.Data.string = rowEl
             row.append(c)
-            row.append('\r\n')
+            row.append('\n')
       
                 
         self._soup.Table.append(row)
-        self._soup.Table.append('\r\n')
+        self._soup.Table.append('\n')
 
     def write(self, filePath):
                 
         FileHlp(filePath, 'w').write(str(self._soup))  
         
         log.info("xml file saved: %s", str(filePath))
+      
+    def getdata(self):
         
+        return str(self._soup)
         
         
 reload(sys)
@@ -1586,10 +1647,10 @@ class MXShopZhovtuha():
         failedCategories = []
 
         # create base
-        xml = Xml2003File()
+        xml = Xml2003FileStub()
         
         # price format
-        xml.setheaders(['orig sku', 
+        xml.addrow(['orig sku', 
                         'category', 
                         'product',
                         'priceSaleUah (%.2f)' % currencyRate,
@@ -1957,7 +2018,7 @@ class MXShopZhovtuha():
         
         if categories:
             
-            xml = Xml2003File()
+            xml = Xml2003FileStub()
             idx = 1
             
             for cc in categories:
@@ -3295,6 +3356,32 @@ class testHttpCache(unittest.TestCase):
             isException = True
             
         self.assertTrue(isException)
+        
+class testXml(unittest.TestCase):
+    
+    def runTest(self):
+        
+                # create base
+        xml = Xml2003FileStub()
+        
+        # price format
+        xml.addrow(['orig sku', 
+                        'category', 
+                        'product',
+                        'priceSaleUah (%.2f)' % 0,
+                        'priceUah', 
+                        'dealer usd/uah/salary', 
+                        'option', 
+                        'options', 
+                        'seoUrl + dealerMark', 
+                        'description',
+                        'balance',
+                        'brand'])
+        
+        xml.addrow(['1', '2', '3', '4'])
+
+        log.info(xml.getdata())
+        
         
 class OFF_testConvertToXls2003(unittest.TestCase):
     

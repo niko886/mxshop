@@ -34,6 +34,7 @@
     ss:Span="1"/>
    <Column ss:Index="18" ss:Hidden="1" ss:AutoFitWidth="0" ss:Span="1"/>
 
+<!-- example 
    <Row>
     <Cell><Data ss:Type="String">sku</Data></Cell>
     <Cell><Data ss:Type="String">product</Data></Cell>
@@ -52,6 +53,10 @@
    </Row>
    <Row>
    </Row>
+-->
+
+
+<!--add-->
   </Table>
  </Worksheet>
 </Workbook>
