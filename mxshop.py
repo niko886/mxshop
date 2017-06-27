@@ -1602,8 +1602,12 @@ class MXShopZhovtuha():
                         'balance',
                         'brand'])
         
-        # add to elements                
-        for sku in priceData.keys():  
+        # add to elements          
+        
+        sortedKeys = priceData.keys()
+        sortedKeys.sort()
+              
+        for sku in sortedKeys:  
             
             if not sku in webData.keys():
                 continue
@@ -2761,19 +2765,15 @@ class testProcessCycleKopyl(unittest.TestCase):
     
     def runTest(self):
         
-        
 
-        kop = MXShopZhovtuha()#MXShopKopyl()
+        kop = MXShopZhovtuha()
         
         log.info('%s cycle test' % kop._d)        
         
         remoteXmlFile = kop.WebAdminGetRemoteXmlName()
                 
         data, fileName, currencyRate = kop.DownloadCurrentPriceFromWeb()
-        
-        #fileName = 'dealer_price_2017-03-23 22.25.16.xls'
-        #currencyRate = 27.1
-        
+                
         log.info('price downloaded: %s', fileName)
          
         xlsFilePath = os.path.join('prices', 'orig', kop._d, fileName)
@@ -2795,10 +2795,7 @@ class testProcessCycleKopyl(unittest.TestCase):
         self.assertTrue(webData)
           
         kop.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
-        
-#         d = FileHlp(xmlFilePath, 'r').read()
-#         FileHlp('/home/vasya/Dropbox/mxshop/out-kop.xml', 'w').write(d)        
-  
+          
         kop.UploadToServer(xmlFilePath, '%s/%s' % (kop._remoteUploadDir, remoteXmlFile))
            
         for idx in range(0, 9):
@@ -3397,9 +3394,6 @@ if __name__ == "__main__":
     parser.add_option("-c", "--cachePath", type="string",
                       action="store", dest="cachePath", default='',
                       help="change default program cache path")
-
-
-
 
 # TODO:
 #     parser.add_option("-w", "--watermark=USER1,USER2,...", type="string",
