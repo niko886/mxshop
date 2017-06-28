@@ -1431,7 +1431,7 @@ class MXShopZhovtuha():
         # get currency rate
         
         currencyRate = 0
-        s = re.search('Курс (\d+[,\.]\d+)', messageText, re.MULTILINE)
+        s = re.search('Курс.*?(\d+[,\.]\d+)', messageText, re.MULTILINE)
         if s:
             currencyRate = float(s.group(1).replace(',', '.'))
             assert(currencyRate > 20 and currencyRate < 35)
@@ -3425,7 +3425,8 @@ def ProcessMain(dealer, **kw):
     assert(webData)
       
     if kw.get('noUploadToAdmin', None):
-        log.info('[-] no upload option specified, exiting now')  
+        log.info('[-] no upload option specified, exiting now')
+        return  
     
     dealer.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
     
