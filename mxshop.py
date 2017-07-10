@@ -2460,7 +2460,20 @@ class MXShopKopyl(MXShopZhovtuha):
                         raise WebSearchPriceFound('found product on web, but in price it seems to be sold out')
                 
             if not sku:
-                continue
+
+                skuParts = gotSku[0].split('-') 
+                
+                skuElementParts = element['sku'].split('-')
+                
+                if skuParts[0] == skuElementParts[0] and skuParts[1] == skuElementParts[1]:
+                    
+                    log.info('[!] sku mismatch, but size deducted successfully (%s - %s)' %
+                             (element['sku'], ' '.join(gotSku)))
+                    
+                else:
+                
+                
+                    continue
     
             webElement = {}
             webElement['category'] = ''
