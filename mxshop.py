@@ -1431,7 +1431,7 @@ class MXShopZhovtuha():
         # get currency rate
         
         currencyRate = 0
-        s = re.search('Курс.*?(\d+[,\.]\d+)', messageText, re.MULTILINE)
+        s = re.search('Курс.*?(\d+[,\.]*\d+)', messageText, re.MULTILINE)
         if s:
             currencyRate = float(s.group(1).replace(',', '.'))
             assert(currencyRate > 20 and currencyRate < 35)
@@ -1548,7 +1548,7 @@ class MXShopZhovtuha():
         # get currency rate
         
         currencyRate = 0
-        s = re.search('Курс (\d+[,\.]\d+)', str(soup.text), re.MULTILINE)
+        s = re.search('Курс (\d+[,\.]*\d+)', str(soup.text), re.MULTILINE)
         if s:
             currencyRate = float(s.group(1).replace(',', '.'))
             assert(currencyRate > 20 and currencyRate < 35)
@@ -2223,7 +2223,7 @@ class MXShopKopyl(MXShopZhovtuha):
         
         # USD = 27.1 грн.
         currencyRate = 0
-        s = re.search('USD = (\d+\.\d+) грн\.', str(soup.text), re.MULTILINE)
+        s = re.search('USD = (\d+[\.]*\d+) грн\.', str(soup.text), re.MULTILINE)
         if s:
             currencyRate = float(s.group(1))
             log.info('price currencyRate = %.2f' % currencyRate)
