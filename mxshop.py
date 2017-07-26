@@ -23,6 +23,8 @@ class WebSearchPriceFound(Exception):
     pass
 class WebSearchDuplicatedImage(Exception):
     pass
+class WebSearchNoCategory(Exception):
+    pass
 class AdminFileNotFound(Exception):
     pass
 class AdminNeedContinue(Exception):
@@ -175,7 +177,7 @@ class Xml2003FileStub():
         
         for r in row:
             cells += dummyCell % self.escape(str(r))
-            
+                    
         self._data += dummyRow % cells
             
 
@@ -928,7 +930,7 @@ class MXShopZhovtuha():
             return json.loads(jsonResult)
 
          
-        baseUrl = 'http://motocrazytown.com.ua'
+        baseUrl = conf.MOTOCRAZY_HOST
         searchUrl = baseUrl + '/search'
         
         session = requests.Session()
@@ -1117,7 +1119,7 @@ class MXShopZhovtuha():
                 notFound = True
                 notFoundCountOrig += 1
                 
-                log.debug('[!] not found information for %s on "motocrazytown.com.ua" %s' % (sku, ex))
+                log.debug('[!] not found information for %s on "motocrazy...ua" %s' % (sku, ex))
                 
                 try:
                     element = self.GetInfoMotostyleComUa(priceData[sku])
@@ -1358,10 +1360,20 @@ class MXShopZhovtuha():
         try:
             r = br.open(nextLink)
         except mechanize.HTTPError as he:
+            
+            log.info('[~] http error %s', str(he))
+            
             if he.code == 404:
                 raise AdminNeedContinue('please make request once more time')
+
+            if he.code == 503:
+                raise AdminNeedContinue('please make request once more time')
+
+        dd = r.read()
         
-        soup = BeautifulSoup(r.read(), 'lxml')
+        log.debug('[+] read %d bytes', len(dd))
+        
+        soup = BeautifulSoup(dd, 'lxml')
         FileHlp([_CACHE_PATH, 'web-admin-login-4.html'], 'w').write(soup.prettify())
         
         warns = soup.find_all('div', class_='warning')
@@ -1387,11 +1399,12 @@ class MXShopZhovtuha():
         imapSsl.login(conf.GMAIL_LOGIN, conf.GMAIL_PASS)
         imapSsl.select()
         
-        typ, data = imapSsl.search(None, '(FROM "%s")' % conf.GMAIL_SEARCH_FROM)
+        typ, data = imapSsl.search(None, '(TO "zhovtuha")') #  % conf.GMAIL_SEARCH_FROM
         
-        typ, data = imapSsl.fetch(data[0].split()[-1], '(RFC822)') 
+        # fetch last message
+        typ, dd = imapSsl.fetch(data[0].split()[-1], '(RFC822)') 
         
-        msg = email.message_from_string(data[0][1])
+        msg = email.message_from_string(dd[0][1])
         
         fileName = ''
         fileData = ''
@@ -1403,8 +1416,17 @@ class MXShopZhovtuha():
                 
                 log.debug('text/plain:')
                 
-                messageText = str(part.get_payload(decode=True).decode(part.get_content_charset()))
-                messageText = messageText.strip()
+                cont = part.get_content_charset()
+                
+                if cont:
+                    
+                    messageText = str(part.get_payload(decode=True).decode(cont))
+                    messageText = messageText.strip()
+                    
+                else:
+                    
+                    messageText = str(part.get_payload())
+                    messageText = messageText.strip()
                 
                 log.debug(messageText) 
 
@@ -1420,6 +1442,8 @@ class MXShopZhovtuha():
                 
                 
                 fileData = part.get_payload(decode=True)
+                    
+                    
                             
         imapSsl.close()
         imapSsl.logout()
@@ -1757,7 +1781,7 @@ class MXShopZhovtuha():
             rr[7] = options
             rr[8] = self._seoPrefix + webData[sku]['seoUrl']
             rr[9] = webData[sku]['description']
-            rr[10] = priceData[sku]['balance']
+            rr[10] = int(priceData[sku]['balance'])
             rr[11] = brand
             rr[12] = skuForWeb
             idx = 20 - 1
@@ -1964,7 +1988,7 @@ class MXShopZhovtuha():
                 continue
                  
             
-            s = re.search('curl .*? = Could not resolve host: motocrazytown.com.ua#video_code_(\d+)', l)
+            s = re.search('curl .*? = Could not resolve host: moto.*?.ua#video_code_(\d+)', l)
             if s:
                 if not s.group(1) in jsVideos:
                     jsVideo += 1
@@ -1972,7 +1996,7 @@ class MXShopZhovtuha():
                 continue
             
                                       
-            s = re.search('Download.*?photo fails.*? Url.*? http://motocrazytown.com.ua#video_code_(\d+)', l)
+            s = re.search('Download.*?photo fails.*? Url.*? http://moto.*?ua#video_code_(\d+)', l)
             if s: 
                 if not s.group(1) in jsVideos:
                     jsVideo += 1
@@ -2198,7 +2222,7 @@ class MXShopKopyl(MXShopZhovtuha):
         br.set_handle_referer(True)
         br.set_handle_robots(False)
         
-        rootSite = "http://moto.kopylbros.com"
+        rootSite = conf.KOPYL_HOST
         
         log.debug('login to %s...', rootSite)
         
@@ -2280,7 +2304,7 @@ class MXShopKopyl(MXShopZhovtuha):
         
         result = {}
         
-        for rownum in range(1, sheet.nrows): 
+        for rownum in range(1, sheet.nrows):
             
             priceIdx = str(rownum + 1)
             
@@ -2292,7 +2316,12 @@ class MXShopKopyl(MXShopZhovtuha):
                 sku = str(row[0]).strip()
             category = str(row[1]).strip()
             product = str(row[2]).strip()
-            balance = str(row[3]).strip()
+            
+            b = str(row[3]).strip()
+            if b:
+                b = int(float(b))
+            balance = b
+            
             priceDealer = str(row[5]).strip()            
             priceRetail = str(row[6]).strip()
             saleOff = str(row[7]).strip()
@@ -2365,7 +2394,7 @@ class MXShopKopyl(MXShopZhovtuha):
         if jsonResult:
             return json.loads(jsonResult)
         
-        baseUrl = 'http://moto.kopylbros.com'
+        baseUrl = conf.KOPYL_HOST
         
         searchUrl = baseUrl + '/search'
         
@@ -2444,6 +2473,10 @@ class MXShopKopyl(MXShopZhovtuha):
                 
                 if possibleSku == element['sku']:
                     sku = possibleSku
+                elif possibleSku.replace('_', '-') == element['sku']:
+                    log.warning("[!] sku deduction: %s -> %s" % (possibleSku, element['sku']))
+                    sku = possibleSku
+
                 elif possibleSku[1:] == element['sku'] and possibleSku[0] == '0': # drop first zero
                     log.warning('first zero from sku is dropped')
                     sku = possibleSku 
@@ -2470,6 +2503,8 @@ class MXShopKopyl(MXShopZhovtuha):
                     log.info('[!] sku mismatch, but size deducted successfully (%s - %s)' %
                              (element['sku'], ' '.join(gotSku)))
                     
+                    sku = element['sku']
+                    
                 else:
                 
                 
@@ -2494,6 +2529,9 @@ class MXShopKopyl(MXShopZhovtuha):
             categoryList = [tag.a.text.strip() for tag in tags]
                     
             webElement['category'] = ' | '.join(categoryList)
+            if not webElement['category']:
+                raise WebSearchNoCategory("no category for sku = %s, url = %s/products/%s" % (
+                    sku, baseUrl, seoUrl))
             assert(webElement['category'])
     
             # find saleOff (%)
@@ -2595,6 +2633,7 @@ class MXShopKopyl(MXShopZhovtuha):
         i = 0
         notFoundCount = 0
         skuNotMatched = 0
+        skuNoCategory = 0
         
         keysLen = len(priceData.keys())
         
@@ -2621,9 +2660,17 @@ class MXShopKopyl(MXShopZhovtuha):
                 raise ex
                 
             except WebSearchSkuNotMatched as ex:
+                
                 skuNotMatched += 1
                 log.warning('[!] %s', (str(ex)))
-                raise ex                
+                raise ex
+                            
+            except WebSearchNoCategory as ex:
+                
+                skuNoCategory += 1
+                
+                log.error("[!] skipped: %s", str(ex))
+                continue
              
             assert(element)
             assert(element['images'])
@@ -2631,7 +2678,8 @@ class MXShopKopyl(MXShopZhovtuha):
             webData[sku] = element
             
         log.info('web grab for kopyl completed')
-        log.info('searched for %d items, sku not matched - %d, not found - %d', i, skuNotMatched, notFoundCount)
+        log.info('searched for %d items, sku not matched - %d, not found - %d, no category - %d', 
+                 i, skuNotMatched, notFoundCount, skuNoCategory)
 
         return webData
 
@@ -3182,7 +3230,7 @@ class OFF_testGetFromWebMotoKopylbrosCom(unittest.TestCase):
     
     def runTest(self):
         
-        log.info('get info from moto.kopylbros.com test')
+        log.info('get info from kop...com test')
         
         testPricePath = os.path.join('prices', 'test', 'kopyl', 'dealer_price_2017-02-04 22.49.00-xls2003.xls')
         
@@ -3437,11 +3485,11 @@ def ProcessMain(dealer, **kw):
     webData = dealer.GrabWebData(priceData)
     assert(webData)
       
+    dealer.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
+    
     if kw.get('noUploadToAdmin', None):
         log.info('[-] no upload option specified, exiting now')
         return  
-    
-    dealer.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
     
     dealer.UploadToServer(xmlFilePath, '%s/%s' % (dealer._remoteUploadDir, remoteXmlFile))
        
@@ -3534,7 +3582,9 @@ if __name__ == "__main__":
             
             ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin)
             
-            dealer.AddWaterMarkToAllImages()
+            if not options.noUploadToAdmin:
+            
+                dealer.AddWaterMarkToAllImages()
                         
             del(dealer)
 
