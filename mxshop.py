@@ -606,7 +606,7 @@ class MXShopZhovtuha():
         assert(row1[columnSku] == 'Артикул')
         assert(row1[columnPriceRetail] == 'Розничная цена')
         #assert(row1[columnPriceDealer] == 'Оптовая цена') FIXME: ?
-        assert(row1[columnPriceDealer] == 'Оптовая цена' or row1[columnPriceDealer] == 'Розничная цена')
+        assert('Оптовая цена' in row1[columnPriceDealer] or 'Розничная цена' in row1[columnPriceDealer])
         assert(row1[columnBalance] == 'Склад (оптовый)')
                     
         saleOffCount = 0
@@ -1371,7 +1371,7 @@ class MXShopZhovtuha():
 
         dd = r.read()
         
-        log.debug('[+] read %d bytes', len(dd))
+        log.info('[+] read %d bytes', len(dd))
         
         soup = BeautifulSoup(dd, 'lxml')
         FileHlp([_CACHE_PATH, 'web-admin-login-4.html'], 'w').write(soup.prettify())
