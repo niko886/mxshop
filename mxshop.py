@@ -428,7 +428,7 @@ class MXShopZhovtuha():
         {'name': 'Мотоэкипировка | Мотоштаны', 'mustHave': 'Направление: Кросс/ATV, Текстильные штаны', 'target': 'Дорожная экипировка | Штаны'},
         ]
     
-    _possibleBrands = ['putoline', 'ALIAS', 'ATLAS BRACE', 'Diadora', 'DRIFT', 'FORMA BOOTS', 'HJC', 'Icon', 'INTERPHONE', 
+    _possibleBrands = ['putoline', 'ALIAS', 'ATLAS BRACE', 'Diadora', 'DRIFT', 'FORMA BOOTS', 'HJC', 'Icon', 'INTERPHONE', 'Gaerne',
                        'KNOX', 'MACNA', 'EBC', 'Micron', 'MOBIUS', 'OAKLEY', 'PUTOLINE OIL', 'REVIT', 'RS-TAICHI', 'SHOEI', 'Sidi', 'SPY+', 'SUOMY',
         ]
     
@@ -658,8 +658,19 @@ class MXShopZhovtuha():
                 
 
             if not priceRetail:
-                invalidStr = 'empty priceRetail'
-                invalidSkuPrice.append(sku)
+                
+                
+                if priceDealer and 'GAERNE' in currentCategory.upper():
+                    
+                    newPrice = str(float(priceDealer) * 1.2)
+                    priceRetail = newPrice
+                    log.info("[!] price for Gaerne decuted from hardcode %s %s -> %s" %(
+                        sku, priceDealer, priceRetail))
+                
+                else:
+                    
+                    invalidStr = 'empty priceRetail'
+                    invalidSkuPrice.append(sku)
 
             if not priceDealer:
                 invalidStr = 'empty priceDealer'
@@ -2328,7 +2339,8 @@ class MXShopKopyl(MXShopZhovtuha):
             
             isInvalid = ''
             
-            if not sku or not category or not saleOff or not balance or not priceRetail or not priceDealer or not saleOff:
+            if not sku or not category or not priceRetail or not priceDealer or not saleOff:
+                      
                 zeroCellsCount += 1
                 isInvalid = 'one of essential cells is empty'
         
@@ -2337,7 +2349,8 @@ class MXShopKopyl(MXShopZhovtuha):
                 isInvalid = 'price retail = price dealer'
                                 
             if isInvalid:
-                log.debug('[!] %s; %s; %s; %s; %s; %s; [! invalid line]' % (priceIdx, sku, priceRetail, priceDealer, category, product,))
+                log.debug('[!] %s; %s; %s; %s; %s; %s; [! invalid line]' % (
+                    priceIdx, sku, priceRetail, priceDealer, category, product,))
                 continue
             
             assert(len(sku) > 3)
