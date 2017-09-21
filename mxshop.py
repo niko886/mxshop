@@ -106,6 +106,12 @@ class HttpPageCache():
             return res[0]
         else:
             return None
+        
+    def drop(self, url):
+        cur = self._c.cursor()
+        cur.execute('DELETE FROM "%s" WHERE url = ?' % self._site, (url,))
+        self._c.commit()
+        
 
 class FileHlp():
     
@@ -2403,7 +2409,12 @@ class MXShopKopyl(MXShopZhovtuha):
         cache = HttpPageCache('moto-kopylbros-com')
         
         cacheJson = HttpPageCache('moto-kopylbros-com-json', dbFile='values-json.db')
+
         jsonResult = cacheJson.get(element['sku'])
+        if kw.get('noCache', False):
+            cacheJson.drop(element['sku'])
+            jsonResult = ''
+        
         if jsonResult:
             return json.loads(jsonResult)
         
@@ -2419,8 +2430,13 @@ class MXShopKopyl(MXShopZhovtuha):
             params = {'search_text': element['sku']}
         req = requests.Request('POST', searchUrl, data=params)
         prepped = s.prepare_request(req)        
-        
+                   
         cached = cache.get(prepped.url + '/' + prepped.body)
+
+        if kw.get('noCache', False):
+            cache.drop(prepped.url + '/' + prepped.body)
+            cached = ''
+        
         if not cached:
             resp = s.send(prepped)
             
@@ -2446,7 +2462,12 @@ class MXShopKopyl(MXShopZhovtuha):
             assert(seoUrl)
             
             url = baseUrl + div.a['href']
-            cached = cache.get(url)         
+            cached = cache.get(url)
+            
+            if kw.get('noCache', False):
+                cache.drop(url)
+                cached = ''
+                     
             if not cached:    
                 resp = s.get(url)
                 
@@ -2674,9 +2695,17 @@ class MXShopKopyl(MXShopZhovtuha):
                 
             except WebSearchSkuNotMatched as ex:
                 
-                skuNotMatched += 1
-                log.warning('[!] %s', (str(ex)))
-                raise ex
+                log.warning('[~] %s, retry with no cache...', str(ex))
+                
+                try:
+                    element = self.GetInfoMotoKopylbrosCom(priceData[sku],
+                                                           noCache=1)
+                except WebSearchSkuNotMatched as ex2:
+                    skuNotMatched += 1
+                    log.warning('[!] %s', (str(ex)))
+                    raise ex
+                
+
                             
             except WebSearchNoCategory as ex:
                 
