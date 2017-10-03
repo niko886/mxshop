@@ -469,8 +469,8 @@ class MXShopZhovtuha():
             self._remoteUploadDir = 'public_html/newtest/admin/uploads'
         else:
             self._webAdminLoginUrl = conf.MXSHOP_URL      
-            self._remoteDirImageData = 'public_html/image/data'
-            self._remoteUploadDir = 'public_html/admin/uploads'
+            self._remoteDirImageData = '/var/www/html/image/data'
+            self._remoteUploadDir = '/var/www/html/admin/uploads'
 
                 
 
@@ -624,7 +624,7 @@ class MXShopZhovtuha():
             row = sheet.row_values(rownum)
 
             product = row[columnProduct].strip()
-            sku = row[columnSku].strip()
+            sku = str(row[columnSku]).strip()
             priceRetail = str(row[columnPriceRetail]).strip()
             saleOff = ''
             if columnSaleOff:
@@ -1845,17 +1845,29 @@ class MXShopZhovtuha():
         ssh = paramiko.SSHClient() 
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())                        
         
-        ssh.connect('uashared08.twinservers.net', port=21098, username=conf.SSH_LOGIN, 
-                    password=conf.SSH_PASS)
+        ssh.connect(conf.SSH_ADDR, port=conf.SSH_PORT, username=conf.SSH_LOGIN)
+        
+        
+        stdin_, stdout_, stderr_ = ssh.exec_command("docker inspect opencart | grep merged | sed -r -e 's/.*?: \"//' -e 's/\",.*//'" )
+        assert(not stdout_.channel.recv_exit_status())
+        
+        out = stdout_.read().strip()
+        
+        log.debug("[+] path to docker volume: %s", out)
+        
+        ssh.dockerVolumePath = out
         
         return ssh
 
         
-    def UploadToServer(self, localFile, remoteFile):
+    def UploadToServer(self, localFile, remoteFile, addDockerPrefix=False):
         
         ssh = self.ConnectToServer() 
                         
         sftp = ssh.open_sftp()
+        
+        if addDockerPrefix:
+            remoteFile = ssh.dockerVolumePath + remoteFile
         
         log.info('uploading %s -> %s' % (localFile, remoteFile))
         
@@ -1863,10 +1875,14 @@ class MXShopZhovtuha():
         sftp.close()
         ssh.close()
                 
-    def DownloadFromServer(self, remoteFile, localFile):
+    def DownloadFromServer(self, remoteFile, localFile, addDockerPrefix=False):
 
         ssh = self.ConnectToServer()
         sftp = ssh.open_sftp()
+
+        if addDockerPrefix:
+            remoteFile = ssh.dockerVolumePath + remoteFile
+
         
         log.info('downloading %s <- %s' % (localFile, remoteFile))
         
@@ -1921,20 +1937,22 @@ class MXShopZhovtuha():
         log.info('connecting to ssh...')
         
         ssh = self.ConnectToServer()
+        
+        docPath = ssh.dockerVolumePath
          
         log.info('archiving...')
         stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; tar cfvj %s.tar.bz2 %s" % (
-            remoteDirImageData, remoteImageDir, remoteImageDir))
+            docPath + remoteDirImageData, remoteImageDir, remoteImageDir))
         assert(not stdout_.channel.recv_exit_status())
 
         log.info('downloading...')
         sftp = ssh.open_sftp()
-        sftp.get('%s/%s.tar.bz2' % (remoteDirImageData, remoteImageDir), 
+        sftp.get('%s/%s.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir), 
                  os.path.join(_CACHE_PATH, '%s.tar.bz2' % remoteImageDir))
         
         log.info('removing from server...')
         stdin_, stdout_, stderr_ = ssh.exec_command('cd %s; rm -rf %s.tar.bz2' %(
-            remoteDirImageData, remoteImageDir))
+            docPath + remoteDirImageData, remoteImageDir))
         assert(not stdout_.channel.recv_exit_status())
         
         log.info('extracting...')
@@ -1949,7 +1967,7 @@ class MXShopZhovtuha():
         
         log.info('uploading to server')
         sftp.put(os.path.join(_CACHE_PATH, '%s-w.tar.bz2' % remoteImageDir), 
-                 '%s/%s-w.tar.bz2' % (remoteDirImageData, remoteImageDir))
+                 '%s/%s-w.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir))
         
         log.info('removing localfile')
         subprocess.check_call('cd %s; rm -rf %s-w.tar.bz2 %s' % (
@@ -1957,7 +1975,7 @@ class MXShopZhovtuha():
         
         log.info('extracting on server...')        
         stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; tar xvf %s-w.tar.bz2; rm -rf %s-w.tar.bz2" % (
-            remoteDirImageData, remoteImageDir, remoteImageDir))
+            docPath + remoteDirImageData, remoteImageDir, remoteImageDir))
         assert(not stdout_.channel.recv_exit_status())
 
 
@@ -3517,24 +3535,32 @@ def ProcessMain(dealer, **kw):
     newFilePath = os.path.join(_CACHE_PATH, os.path.splitext(fileName)[0] + '.xml')
              
     FileHlp(xlsFilePath, 'w').write(data)
+    
+    cachedXml = kw.get('cachedXml', None)
+    if not cachedXml:        
      
-    r = dealer.ConvertTo97Xls(xlsFilePath, newFilePath)
-    assert(r)
-     
-    priceData = dealer.ReadPrice(newFilePath)
-    assert(priceData)
-    os.remove(newFilePath)
-      
-    webData = dealer.GrabWebData(priceData)
-    assert(webData)
-      
-    dealer.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
+        r = dealer.ConvertTo97Xls(xlsFilePath, newFilePath)
+        assert(r)
+         
+        priceData = dealer.ReadPrice(newFilePath)
+        assert(priceData)
+        os.remove(newFilePath)
+          
+        webData = dealer.GrabWebData(priceData)
+        assert(webData)
+          
+        dealer.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
+        
+    else:
+        log.info("using cached xml: %s", cachedXml)
+        xmlFilePath = cachedXml
     
     if kw.get('noUploadToAdmin', None):
         log.info('[-] no upload option specified, exiting now')
         return  
     
-    dealer.UploadToServer(xmlFilePath, '%s/%s' % (dealer._remoteUploadDir, remoteXmlFile))
+    dealer.UploadToServer(xmlFilePath, '%s/%s' % (dealer._remoteUploadDir, remoteXmlFile),
+                          addDockerPrefix=True)
        
     for idx in range(0, 9):
            
@@ -3548,10 +3574,12 @@ def ProcessMain(dealer, **kw):
             continue
         
     dealer.DownloadFromServer('%s/errors.tmp' % dealer._remoteUploadDir,
-                            os.path.join(_CACHE_PATH, 'errors.txt'))
+                            os.path.join(_CACHE_PATH, 'errors.txt'),
+                            addDockerPrefix=True)
     
     dealer.DownloadFromServer('%s/report.tmp' % dealer._remoteUploadDir,
-                            os.path.join(_CACHE_PATH, 'report.txt'))
+                            os.path.join(_CACHE_PATH, 'report.txt'),
+                            addDockerPrefix=True)
        
     dealer.AnalyzeErrorsTmp(os.path.join(_CACHE_PATH, 'errors.txt'))        
     dealer.AnalyzeReportTxt(os.path.join(_CACHE_PATH, 'report.txt'))
@@ -3586,6 +3614,10 @@ if __name__ == "__main__":
     parser.add_option("-c", "--cachePath", type="string",
                       action="store", dest="cachePath", default='',
                       help="change default program cache path")
+    
+    parser.add_option("-x", "--cachedXml", type="string",
+                      action="store", dest="cachedXml", default='',
+                      help="use cached xml instead of generating new")
 
 # TODO:
 #     parser.add_option("-w", "--watermark=USER1,USER2,...", type="string",
@@ -3615,7 +3647,8 @@ if __name__ == "__main__":
         
         if 'zhov' in options.buildPrices.split(','):
             dealer = MXShopZhovtuha(useTestingServer=options.useTestingServer)
-            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin)
+            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
+                        cachedXml=options.cachedXml)
             
             del(dealer)
 
@@ -3623,7 +3656,8 @@ if __name__ == "__main__":
             
             dealer = MXShopKopyl(useTestingServer=options.useTestingServer)
             
-            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin)
+             ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
+                         cachedXml=options.cachedXml)
             
             if not options.noUploadToAdmin:
             
