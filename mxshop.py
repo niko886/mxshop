@@ -471,6 +471,7 @@ class MXShopZhovtuha():
             self._webAdminLoginUrl = conf.MXSHOP_URL      
             self._remoteDirImageData = '/var/www/html/image/data'
             self._remoteUploadDir = '/var/www/html/admin/uploads'
+            self._remoteImageCacheDir = '/var/www/html/image/cache/data/kop'
 
                 
 
@@ -1933,6 +1934,7 @@ class MXShopZhovtuha():
     
         remoteDirImageData = self._remoteDirImageData
         remoteImageDir = self._remoteImageDir
+        remoteImageCacheDir = self._remoteImageCacheDir
 
         log.info('connecting to ssh...')
         
@@ -1976,6 +1978,11 @@ class MXShopZhovtuha():
         log.info('extracting on server...')        
         stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; tar xvf %s-w.tar.bz2; rm -rf %s-w.tar.bz2" % (
             docPath + remoteDirImageData, remoteImageDir, remoteImageDir))
+        
+        log.info('clear cache...')        
+        stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; rm -rf *" % (
+            docPath + remoteImageCacheDir))
+
         assert(not stdout_.channel.recv_exit_status())
 
 
@@ -2207,7 +2214,7 @@ class MXShopKopyl(MXShopZhovtuha):
         "Футболки": "Одежда | Футболки",
         "Шапки": "Одежда | Шапки",
         "Шорты": "Одежда | Шорты",
-        
+        "Аксессуары | Защита двигателя": "Запчасти | Другое",
         }
     
     _redirectByName = {
@@ -3656,7 +3663,7 @@ if __name__ == "__main__":
             
             dealer = MXShopKopyl(useTestingServer=options.useTestingServer)
             
-             ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
+            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
                          cachedXml=options.cachedXml)
             
             if not options.noUploadToAdmin:
