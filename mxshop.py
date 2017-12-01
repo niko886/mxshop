@@ -1946,27 +1946,27 @@ class MXShopZhovtuha():
         stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; tar cfvj %s.tar.bz2 %s" % (
             docPath + remoteDirImageData, remoteImageDir, remoteImageDir))
         assert(not stdout_.channel.recv_exit_status())
-
+ 
         log.info('downloading...')
         sftp = ssh.open_sftp()
         sftp.get('%s/%s.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir), 
                  os.path.join(_CACHE_PATH, '%s.tar.bz2' % remoteImageDir))
-        
+         
         log.info('removing from server...')
         stdin_, stdout_, stderr_ = ssh.exec_command('cd %s; rm -rf %s.tar.bz2' %(
             docPath + remoteDirImageData, remoteImageDir))
         assert(not stdout_.channel.recv_exit_status())
-        
+         
         log.info('extracting...')
         subprocess.check_call('cd %s; tar xvf %s.tar.bz2 > /dev/null; rm -rf %s.tar.bz2' % (
             _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
-        
-        self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
          
+        self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
+          
         log.info('archiving again...')
         subprocess.check_call('cd %s; tar cfvj %s-w.tar.bz2 %s > /dev/null' % (
             _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
-        
+         
         log.info('uploading to server')
         sftp.put(os.path.join(_CACHE_PATH, '%s-w.tar.bz2' % remoteImageDir), 
                  '%s/%s-w.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir))
@@ -1975,9 +1975,22 @@ class MXShopZhovtuha():
         subprocess.check_call('cd %s; rm -rf %s-w.tar.bz2 %s' % (
             _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
         
-        log.info('extracting on server...')        
-        stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; tar xvf %s-w.tar.bz2; rm -rf %s-w.tar.bz2" % (
-            docPath + remoteDirImageData, remoteImageDir, remoteImageDir))
+        log.info('extracting on server...')
+        log.info("cd %s; tar xvf %s-w.tar.bz2; chown -R 33:33 %s; rm -rf %s-w.tar.bz2" % (
+            docPath + remoteDirImageData, remoteImageDir, remoteImageDir, remoteImageDir))        
+        stdin_, stdout_, stderr_ = ssh.exec_command(
+                 "cd %s; tar xvf %s-w.tar.bz2; chown -R 33:33 %s; rm -rf %s-w.tar.bz2" % (
+            docPath + remoteDirImageData, remoteImageDir, remoteImageDir, remoteImageDir))
+        
+        log.debug("stdout:\n")
+        log.debug(stdout_.read())
+        log.debug("stderr:\n")
+        log.debug(stdout_.read())
+        
+        #log.debug("stdout:\n", stdout_.readlines())
+        #log.debug("stderr:\n", stderr_.readlines())
+        
+        assert(not stdout_.channel.recv_exit_status())
         
         log.info('clear cache...')        
         stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; rm -rf *" % (
@@ -2170,7 +2183,7 @@ class MXShopKopyl(MXShopZhovtuha):
         "Запчасти и расходники | Звезды передние": "Запчасти | Цепи и звезды",
         "Запчасти и расходники | Комплекты пластика": "Запчасти | Другое",
         "Запчасти и расходники | Мото цепи": "Запчасти | Цепи и звезды",
-        "Запчасти и расходники | Рули/Clip-Ons": "Запчасти | Другое",
+        "Запчасти и расходники | Рули/Clip-Ons": "Запчасти | Рули",
         "Запчасти и расходники | Слайдера/Ловушки/Ролики": "Запчасти | Другое",
         "Запчасти и расходники | Тормозные колодки": "Запчасти | Тормозные колодки",
         "Масла и химия | Антифризы": "Химия | Другое",
@@ -2215,6 +2228,9 @@ class MXShopKopyl(MXShopZhovtuha):
         "Шапки": "Одежда | Шапки",
         "Шорты": "Одежда | Шорты",
         "Аксессуары | Защита двигателя": "Запчасти | Другое",
+        "Аксессуары | Сервисные продукты": "Аксессуары | Другое",
+        "Мото защита | Очки - расходники": "Очки | Аксессуары к очкам",
+        "Запчасти и расходники | Пластик/Комплекты пластика": "Запчасти | Другое",
         }
     
     _redirectByName = {
