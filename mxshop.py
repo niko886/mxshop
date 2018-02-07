@@ -386,6 +386,7 @@ class MXShopZhovtuha():
                     'Мотозащита | Мотозащитные шорты': 'Защита | Шорты', 
                     'Мотозащита | Мотонаколенники': 'Защита | Коленей', 
                     'Мотозащита | Мотоналокотники': 'Защита | Локтей', 
+                    'Мотозащита | Доп вставки мотозащиты': 'Запчасти | Другое',
                     'Мотошлемы | Мотошлем Dual': 'Шлема | Туристические', 
                     'Мотошлемы | Мотошлем Интеграл': 'Шлема | Дорожные', 
                     'Мотошлемы | Мотошлем Кросс': 'Шлема | Кроссовые', 
@@ -590,7 +591,7 @@ class MXShopZhovtuha():
 
         # assert price format
         
-        row1 = sheet.row_values(0)
+        row6 = sheet.row_values(6)
         
         
         columnProduct = 0
@@ -601,7 +602,7 @@ class MXShopZhovtuha():
         columnBalance = 4
         
             
-        if row1[3] == 'Акционная цена со скидкой':
+        if row6[3] == 'Акционная цена со скидкой':
             
             log.info('[!] price with sale off column detected')
             
@@ -609,18 +610,18 @@ class MXShopZhovtuha():
             columnPriceDealer = 4
             columnBalance = 5
         
-        assert(row1[columnProduct] == 'Товар')
-        assert(row1[columnSku] == 'Артикул')
-        assert(row1[columnPriceRetail] == 'Розничная цена')
-        #assert(row1[columnPriceDealer] == 'Оптовая цена') FIXME: ?
-        assert('Оптовая цена' in row1[columnPriceDealer] or 'Розничная цена' in row1[columnPriceDealer])
-        assert(row1[columnBalance] == 'Склад (оптовый)')
+        assert(row6[columnProduct] == 'Товар')
+        assert(row6[columnSku] == 'Артикул')
+        assert(row6[columnPriceRetail] == 'Розничная цена')
+        #assert(row6[columnPriceDealer] == 'Оптовая цена') FIXME: 
+        assert('Оптовая цена' in row6[columnPriceDealer] or 'Розничная цена' in row6[columnPriceDealer])
+        #assert(row6[columnBalance] == 'Склад (оптовый)') FIXME: 
                     
         saleOffCount = 0
         
         currentCategory = ''
 
-        for rownum in range(2, sheet.nrows):
+        for rownum in range(7, sheet.nrows):
             
             row = sheet.row_values(rownum)
 
@@ -2231,6 +2232,7 @@ class MXShopKopyl(MXShopZhovtuha):
         "Аксессуары | Сервисные продукты": "Аксессуары | Другое",
         "Мото защита | Очки - расходники": "Очки | Аксессуары к очкам",
         "Запчасти и расходники | Пластик/Комплекты пластика": "Запчасти | Другое",
+        "Зонты": "Аксессуары | Другое",
         }
     
     _redirectByName = {
