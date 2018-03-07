@@ -591,7 +591,7 @@ class MXShopZhovtuha():
 
         # assert price format
         
-        row6 = sheet.row_values(6)
+        row6 = sheet.row_values(0)
         
         
         columnProduct = 0
@@ -621,7 +621,7 @@ class MXShopZhovtuha():
         
         currentCategory = ''
 
-        for rownum in range(7, sheet.nrows):
+        for rownum in range(3, sheet.nrows):
             
             row = sheet.row_values(rownum)
 
