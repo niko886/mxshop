@@ -13,6 +13,7 @@ import conf
 from collections import OrderedDict
 
 
+
 class WebSearchNotFound(Exception):
     pass
 class WebSearchMultipleFound(Exception):
@@ -24,6 +25,8 @@ class WebSearchPriceFound(Exception):
 class WebSearchDuplicatedImage(Exception):
     pass
 class WebSearchNoCategory(Exception):
+    pass
+class WebSearchInvalidOption(Exception):
     pass
 class AdminFileNotFound(Exception):
     pass
@@ -44,7 +47,7 @@ import tempfile
 
 from optparse import OptionParser
 from PIL import Image
-from datetime import datetime
+
     
 if os.path.exists('mxshop.log'):  # FIXME: proper log config
     os.remove('mxshop.log')
@@ -310,7 +313,9 @@ class MXShopZhovtuha():
     _webAdminId = 'zhovtuha-2'    
     _remoteImageDir = 'zhov'    
     
-    _redirectByName = {}
+    _redirectByName = {'Кросовки Forma TRAINER': 'Одежда | Обувь',}
+    
+    _ssh = False
     
     _categoryMap = {'Мотошлемы | Кросс': 'Шлема | Кроссовые',
                     'Мотошлемы | Dual': 'Шлема | Туристические',
@@ -365,6 +370,7 @@ class MXShopZhovtuha():
                     
                     'МотоАксессуары | Разное' :'Аксессуары | Другое',
                     'МотоАксессуары | Сумки': 'Аксессуары | Сумки',
+                    'МотоАксессуары | Аудио': 'Аксессуары | Гарнитуры',
                     'МотоЭкипировка | Дорожная | МотоКурточки': 'Дорожная экипировка | Куртки',
                     'МотоЭкипировка | Дорожная | МотоДождевики': 'Дорожная экипировка | Другое', 
                     'МотоЭкипировка | Дорожная | Мотоперчатки': 'Дорожная экипировка | Перчатки', 
@@ -574,7 +580,7 @@ class MXShopZhovtuha():
 
         return reordered
     
-    def ReadPrice(self, xlsPath):
+    def ReadPrice(self, xlsPath, **kw):
         
         log.debug('reading price %s...' % xlsPath)
 
@@ -723,6 +729,43 @@ class MXShopZhovtuha():
         log.info('price successfully read: %s', xlsPath)
 
         return result 
+
+
+    def GetCurrencyFinanceEu(self):
+                
+
+        
+        baseUrl = "https://tables.finance.ua/ru/currency/cash/-/ua/eur/0/2018/03/20"
+        
+        s = requests.Session()
+        
+        req = requests.Request('GET', baseUrl)
+        prepped = s.prepare_request(req)
+        
+        res = s.send(prepped)
+        
+        soup = BeautifulSoup(res.text, 'lxml')
+                
+        sumDiv = soup.find("div", class_="summary")
+       
+        log.debug("finance.ua div: %s", sumDiv.prettify())
+        
+        trs = soup.find_all("tr")
+                
+        currency = 0
+        
+        for tr in trs:
+            
+            if "Средний" in tr.text:
+                currency = float(tr.text.split(' ')[1])
+
+        assert(currency)
+
+        log.info("Current EU: %.02f", currency)
+
+        return currency
+
+        
 
     def GetInfoMotostyleComUa(self, element):
         
@@ -1387,6 +1430,9 @@ class MXShopZhovtuha():
 
             if he.code == 503:
                 raise AdminNeedContinue('please make request once more time')
+            
+            if he.code == 504:
+                raise AdminNeedContinue('please make request once more time')
 
         dd = r.read()
         
@@ -1729,6 +1775,7 @@ class MXShopZhovtuha():
             options = ''
             
             if webData[sku]['options']:
+                log.debug(webData[sku]['options'])
                 options = ', '.join(webData[sku]['options'].values())
 
             rr[0] = priceData[sku]['sku']
@@ -1818,8 +1865,13 @@ class MXShopZhovtuha():
         if failedCategories:
             
             failedCategories.sort()
-        
-            log.error("categories not found: %s", '\n'.join(failedCategories))
+
+            out = ''
+            for c in failedCategories:
+                out += '"%s": "%s",\n' % (c, c)
+                        
+            log.error("categories not found: %s" % out)
+
             
             raise RuntimeError("categories not found: %s", '; '.join(failedCategories))
         
@@ -1858,11 +1910,12 @@ class MXShopZhovtuha():
         log.debug("[+] path to docker volume: %s", out)
         
         ssh.dockerVolumePath = out
-        
+
         return ssh
 
         
-    def UploadToServer(self, localFile, remoteFile, addDockerPrefix=False):
+    def UploadToServer(self, localFile, remoteFile, addDockerPrefix=False,
+                       changePermissions=False, removeTmpXml=True):
         
         ssh = self.ConnectToServer() 
                         
@@ -1870,12 +1923,48 @@ class MXShopZhovtuha():
         
         if addDockerPrefix:
             remoteFile = ssh.dockerVolumePath + remoteFile
+            
+            
+
+        
+            
+        if removeTmpXml:
+
+            rm1 = re.sub("/(\d*).xml$", "/*.tmp", remoteFile)
+            rm2 = re.sub("/(\d*).xml$", "/*.xml", remoteFile)
+            
+            log.info('removing %s' % rm1)
+            log.info('removing %s' % rm2)
+            
+            stdin_, stdout_, stderr_ = ssh.exec_command("rm -rf %s" % rm1)
+            assert(not stdout_.channel.recv_exit_status())
+             
+            stdin_, stdout_, stderr_ = ssh.exec_command("rm -rf %s" % rm2)
+            assert(not stdout_.channel.recv_exit_status())
         
         log.info('uploading %s -> %s' % (localFile, remoteFile))
-        
         sftp.put(localFile, remoteFile)
+        
+        if changePermissions:
+            
+            log.info("chown -R 33:33 %s" % remoteFile)
+            
+            stdin_, stdout_, stderr_ = ssh.exec_command("chown -R 33:33 %s" % remoteFile)
+            assert(not stdout_.channel.recv_exit_status())
+        
         sftp.close()
         ssh.close()
+        
+    def RestartDockerContainter(self):
+        
+        ssh = self.ConnectToServer()
+        
+        r = "docker restart opencart"
+        
+        log.info("restarting docker: %s" % r)
+        
+        stdin_, stdout_, stderr_ = ssh.exec_command(r)
+        assert(not stdout_.channel.recv_exit_status())
                 
     def DownloadFromServer(self, remoteFile, localFile, addDockerPrefix=False):
 
@@ -1931,7 +2020,7 @@ class MXShopZhovtuha():
                 log.debug('watermark add... %s %s\n' % (root, f))
                 self.AddWaterMarkToImage(f2, f2)
                 
-    def AddWaterMarkToAllImages(self):
+    def AddWaterMarkToAllImages(self, cleanFiles=True):
     
         remoteDirImageData = self._remoteDirImageData
         remoteImageDir = self._remoteImageDir
@@ -1942,46 +2031,54 @@ class MXShopZhovtuha():
         ssh = self.ConnectToServer()
         
         docPath = ssh.dockerVolumePath
-         
-        log.info('archiving...')
-        stdin_, stdout_, stderr_ = ssh.exec_command("cd %s; tar cfvj %s.tar.bz2 %s" % (
-            docPath + remoteDirImageData, remoteImageDir, remoteImageDir))
+        
+        r = "cd %s; tar cfvj %s.tar.bz2 %s" % (
+            docPath + remoteDirImageData, remoteImageDir, remoteImageDir)
+        log.info('archiving... [%s]' % r)
+        stdin_, stdout_, stderr_ = ssh.exec_command(r)
         assert(not stdout_.channel.recv_exit_status())
  
-        log.info('downloading...')
+        r1 = '%s/%s.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir)
+        r2 = os.path.join(_CACHE_PATH, '%s.tar.bz2' % remoteImageDir)
+        log.info('downloading... [%s] -> [%s]' % (r1, r2))
         sftp = ssh.open_sftp()
-        sftp.get('%s/%s.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir), 
-                 os.path.join(_CACHE_PATH, '%s.tar.bz2' % remoteImageDir))
+        sftp.get(r1, r2)
          
-        log.info('removing from server...')
-        stdin_, stdout_, stderr_ = ssh.exec_command('cd %s; rm -rf %s.tar.bz2' %(
-            docPath + remoteDirImageData, remoteImageDir))
-        assert(not stdout_.channel.recv_exit_status())
+        if cleanFiles:
+            r = 'cd %s; rm -rf %s.tar.bz2' %(
+                docPath + remoteDirImageData, remoteImageDir)
+            log.info('removing from server... [%s]' % r)
+            stdin_, stdout_, stderr_ = ssh.exec_command(r)
+            assert(not stdout_.channel.recv_exit_status())
          
+        r = 'cd %s; tar xvf %s.tar.bz2 > /dev/null; rm -rf %s.tar.bz2' % (
+            _CACHE_PATH, remoteImageDir, remoteImageDir)
         log.info('extracting...')
-        subprocess.check_call('cd %s; tar xvf %s.tar.bz2 > /dev/null; rm -rf %s.tar.bz2' % (
-            _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
+        subprocess.check_call(r, shell=True)
          
         self.DoWatermark(os.path.join(_CACHE_PATH, remoteImageDir))
           
+        r = 'cd %s; tar cfvj %s-w.tar.bz2 %s > /dev/null' % (
+            _CACHE_PATH, remoteImageDir, remoteImageDir)
         log.info('archiving again...')
-        subprocess.check_call('cd %s; tar cfvj %s-w.tar.bz2 %s > /dev/null' % (
-            _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
+        subprocess.check_call(r, shell=True)
          
-        log.info('uploading to server')
-        sftp.put(os.path.join(_CACHE_PATH, '%s-w.tar.bz2' % remoteImageDir), 
-                 '%s/%s-w.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir))
+        r1 = os.path.join(_CACHE_PATH, '%s-w.tar.bz2' % remoteImageDir)
+        r2 = '%s/%s-w.tar.bz2' % (docPath + remoteDirImageData, remoteImageDir)
+        log.info('uploading to server... [%s] -> [%s]' % (r1, r2))
+        sftp.put(r1, r2)
         
-        log.info('removing localfile')
-        subprocess.check_call('cd %s; rm -rf %s-w.tar.bz2 %s' % (
-            _CACHE_PATH, remoteImageDir, remoteImageDir), shell=True)
+        if cleanFiles:
+            r = 'cd %s; rm -rf %s-w.tar.bz2 %s' % (
+                _CACHE_PATH, remoteImageDir, remoteImageDir)
+            log.info('removing localfile [%s]' % r)
+            subprocess.check_call(r, shell=True)
         
+        r = "cd %s; tar xvf %s-w.tar.bz2; chown -R 33:33 %s; rm -rf %s-w.tar.bz2" % (
+            docPath + remoteDirImageData, remoteImageDir, remoteImageDir, remoteImageDir)
         log.info('extracting on server...')
-        log.info("cd %s; tar xvf %s-w.tar.bz2; chown -R 33:33 %s; rm -rf %s-w.tar.bz2" % (
-            docPath + remoteDirImageData, remoteImageDir, remoteImageDir, remoteImageDir))        
-        stdin_, stdout_, stderr_ = ssh.exec_command(
-                 "cd %s; tar xvf %s-w.tar.bz2; chown -R 33:33 %s; rm -rf %s-w.tar.bz2" % (
-            docPath + remoteDirImageData, remoteImageDir, remoteImageDir, remoteImageDir))
+        log.info(r)        
+        stdin_, stdout_, stderr_ = ssh.exec_command(r)
         
         log.debug("stdout:\n")
         log.debug(stdout_.read())
@@ -1998,6 +2095,8 @@ class MXShopZhovtuha():
             docPath + remoteImageCacheDir))
 
         assert(not stdout_.channel.recv_exit_status())
+        
+        self.RestartDockerContainter()
 
 
     def AnalyzeErrorsTmpLines(self, data):
@@ -2029,6 +2128,12 @@ class MXShopZhovtuha():
                 if s.group(1) not in categories:
                     categories.append(s.group(1))  
                 notFoundCategory += 1
+                continue
+            
+            
+            s = re.search("Can not calculate margin. .*? Margin is not set on page Category and Margin", l)
+            if s:
+                # just skip, we are calculating "Please, set folder for photo..."
                 continue
             
             s = re.search("Please, set folder for photo on page 'Category and margin'  for Category '(.*?)' Row ~= \d+", l)
@@ -2264,6 +2369,8 @@ class MXShopKopyl(MXShopZhovtuha):
         'Защита крышки': "Запчасти | Другое",
         'Защита двигателя': "Запчасти | Другое",
         'Защита свингарма': "Запчасти | Другое",
+        'INSTINCT CUFF': 'Мотоботы | Запчасти к мотоботам',
+        'INSTINCT STRAP': 'Мотоботы | Запчасти к мотоботам',
     }
     
     def __init__(self, **kw):
@@ -2333,7 +2440,7 @@ class MXShopKopyl(MXShopZhovtuha):
         
         return data, fileName, currencyRate
 
-    def ReadPrice(self, xlsPath):
+    def ReadPrice(self, xlsPath, **kw):
         
         log.debug('reading price %s...' % xlsPath)
         
@@ -2770,7 +2877,646 @@ class MXShopKopyl(MXShopZhovtuha):
         return webData
 
                 
+class MXShopLob(MXShopZhovtuha):
     
+    _d = 'lob'
+    
+    _seoPrefix = 'lob-'        
+    
+    _webAdminId = 'lob'    
+    _remoteImageDir = 'lob'    
+    
+    _categoryMap = {
+
+        "dual-road/accessories": "Дорожная экипировка | Другое",
+        "dual-road/boots": "Мотоботы | Дорожные",
+        "dual-road/gloves": "Дорожная экипировка | Перчатки",
+        "dual-road/helmets": "Шлема | Дорожные",
+        "dual-road/jackets": "Дорожная экипировка | Куртки",
+        "dual-road/underwear": "Форма | Термобелье",
+        "dual-road/waterproof": "Дорожная экипировка | Другое",
+        "off-road/bags": "Аксессуары | Сумки",
+        "off-road/boots": "Мотоботы | Кроссовые",
+        "off-road/casual": "Одежда | Другое",
+        "off-road/gloves": "Форма | Перчатки",
+        "off-road/helmets": "Шлема | Кроссовые",
+        "off-road/jersey": "Форма | Джерси",
+        "off-road/pants": "Форма | Штаны",
+        "off-road/protections": "Защита | Другое",
+        "off-road/underwear": "Форма | Термобелье",
+        "off-road/waterproof": "Дорожная экипировка | Другое",
+        "plastics/accessories": "Запчасти | Пластик",
+        "plastics/chain-guides-sliders-kit/honda/chain-guides": "Запчасти | Пластик",
+        "plastics/chain-guides-sliders-kit/honda/chain-guides--sliders-kit-": "Запчасти | Пластик",
+        "plastics/chain-guides-sliders-kit/ktm/chain-guides": "Запчасти | Пластик",
+        "plastics/chain-guides-sliders-kit/yamaha/chain-guides": "Запчасти | Пластик",
+        "plastics/chain-guides-sliders-kit/yamaha/chain-guides--sliders-kit": "Запчасти | Пластик",
+        "plastics/chain-guides-sliders-kit/yamaha/chain-sliders": "Запчасти | Пластик",
+        "plastics/fork-shoe-cover/ktm": "Запчасти | Пластик",
+        "plastics/fork-shoe-cover/yamaha": "Запчасти | Пластик",
+        "plastics/front-disk-covers": "Запчасти | Пластик",
+        "plastics/fuel-tanks/auxiliary-fuel-tanks": "Запчасти | Пластик",
+        "plastics/handguards/offroad": "Запчасти | Пластик",
+        "plastics/raptor-front-number-plates": "Запчасти | Пластик",
+        "plastics/replica-plastics/honda/front-fender": "Запчасти | Пластик",
+        "plastics/replica-plastics/honda/full-kits": "Запчасти | Пластик",
+        "plastics/replica-plastics/kawasaki/side-panels": "Запчасти | Пластик",
+        "plastics/replica-plastics/ktm/full-kits": "Запчасти | Пластик",
+        "plastics/replica-plastics/ktm/radiator-scoops": "Запчасти | Пластик",
+        "plastics/replica-plastics/suzuki/front-fender": "Запчасти | Пластик",
+        "plastics/replica-plastics/yamaha/full-kits": "Запчасти | Пластик",
+        "plastics/skid-plates/honda": "Запчасти | Пластик",
+        "plastics/skid-plates/husqvarna": "Запчасти | Пластик",
+        "plastics/skid-plates/ktm": "Запчасти | Пластик",
+        "plastics/x-grip-frame-protectors/honda": "Запчасти | Пластик",
+        "plastics/x-grip-frame-protectors/husqvarna": "Запчасти | Пластик",
+        "plastics/x-grip-frame-protectors/kawasaki": "Запчасти | Пластик",
+        "plastics/x-grip-frame-protectors/ktm": "Запчасти | Пластик",
+        "plastics/x-grip-frame-protectors/suzuki": "Запчасти | Пластик",
+        "plastics/x-grip-frame-protectors/yamaha": "Запчасти | Пластик",
+        "plastics/x-power-/x-power-kit": "Запчасти | Пластик",
+        "sp-club/accessories": "Одежда | Другое",
+        "sp-club/pants": "Одежда | Штаны",
+        "sp-club/shirt": "Одежда | Рубахи",
+        "youth/boots": "Мотоботы | Кроссовые",
+        "youth/gloves": "Форма | Перчатки",
+        "youth/helmets": "Шлема | Кроссовые",
+        "youth/jersey": "Форма | Джерси",
+        "youth/pants": "Форма | Штаны",
+        "youth/protection": "Защита | Другое",
+
+            }
+    _redirectByName = {
+        'CORPORATE BOOTS': 'Одежда | Обувь',
+        'TRAIL WR SHOES BOOTS':  'Одежда | Обувь',
+        'MUD BOOTS':  'Одежда | Обувь',
+        'Knee Guard PROTECTIONS': "Защита | Коленей",
+        'KNEEGUARDS PROTECTIONS': "Защита | Коленей",
+        'Belt PROTECTIONS': "Защита | Пояса",
+        'ROBOT PROTECTIONS': "Защита | Груди и спины",
+        'ELBOW GUARDS PROTECTIONS': "Защита | Локтей",
+        'ELBOWGUARD PROTECTION': "Защита | Локтей",
+        'ELBOW PROTECTIONS': "Защита | Локтей",
+        'MX IMPACT JR PROTECTION': "Форма | Носки",
+        'SOCKS': "Форма | Носки",
+        }
+    
+    def __init__(self, **kw):
+
+        MXShopZhovtuha.__init__(self, **kw)
+        
+    
+    def DownloadCurrentPriceFromWeb(self):
+
+        from email.header import decode_header
+        
+        log.info('logging to mail (imap)...')
+        
+        imapSsl = imaplib.IMAP4_SSL('mail.moto64.net', 993)
+        imapSsl.login(conf.X_LOGIN, conf.X_PASS)
+        imapSsl.select()
+        
+        typ, data = imapSsl.search(None, '(BODY "ACERBIS")') #  % conf.GMAIL_SEARCH_FROM
+        
+        # fetch last message
+        typ, dd = imapSsl.fetch(data[0].split()[-1], '(RFC822)') 
+        
+        msg = email.message_from_string(dd[0][1])
+        
+        #FIXME - filter files
+        #reFiles = "(БОТИ - ШЛЕМА)*(ЗАХИСТ)*(ОДЯГ)*(ПЛАСТИК)*(РІЗНЕ)*.xls"
+        
+        fileNames = []
+        fileDatas = []
+        messageText = ''
+        
+        for part in msg.walk():
+            
+            if part.get_content_type() == 'text/plain':
+                
+                log.debug('text/plain:')
+                
+                cont = part.get_content_charset()
+                
+                if cont:
+                    
+                    messageText = str(part.get_payload(decode=True).decode(cont))
+                    messageText = messageText.strip()
+                    
+                else:
+                    
+                    messageText = str(part.get_payload())
+                    messageText = messageText.strip()
+                
+                log.debug(messageText) 
+
+                 
+            if part.get_content_type() == 'application/vnd.ms-excel':
+                
+                fileName = part.get_filename()
+                if decode_header(fileName)[0][1] is not None:
+                    fileName = decode_header(fileName)[0][0].decode(decode_header(fileName)[0][1])
+                
+                fileName = str(fileName)            
+                log.info("downloaded file: %s", fileName)
+                
+                fileData = part.get_payload(decode=True)
+                
+                fileNames.append(str(fileName))
+                fileDatas.append(fileData)
+
+        
+        imapSsl.close()
+        imapSsl.logout()
+    
+        assert(fileNames)
+        assert(fileDatas)   
+        assert(messageText)
+
+        # get currency rate
+        
+        currencyRate = self.GetCurrencyFinanceEu()
+                    
+        for f, d in zip(fileNames, fileDatas):
+            
+            FileHlp([_CACHE_PATH, f], 'w').write(d)
+        
+        return fileDatas, fileNames, currencyRate
+       
+    def ReadPrice(self, xlsPath, existingPrice=None):
+        
+        log.debug('reading price %s...' % xlsPath)
+
+        rb = xlrd.open_workbook(xlsPath, formatting_info=True)
+
+        sheet = rb.sheet_by_index(0)
+
+        if not existingPrice:
+            result = OrderedDict()
+        else:
+            result = existingPrice
+
+        invalidSkus = []
+        invalidSkuPrice = []
+
+        log.debug('----------------------------------------- table duamp begin -----------------------------------------')
+
+        # assert price format
+        
+        srow = sheet.row_values(1)
+        
+        columnProduct = 1
+        columnSku = 2
+        columnPriceRetail = 3
+        columnSaleOff = 0
+        columnPriceDealer = 3
+        columnBalance = 4
+        
+        assert(srow[0] == '№')
+        assert(srow[columnProduct] == 'Назва')
+        assert(srow[columnSku] == 'Код')
+        assert(srow[columnPriceRetail] == 'Ціна')
+        assert(srow[columnBalance] == 'К-сть')
+
+                    
+        saleOffCount = 0
+        
+        currentCategory = ''
+
+        for rownum in range(2, sheet.nrows):
+            
+            row = sheet.row_values(rownum)
+
+            numberInPrice = row[0].strip()
+            product = row[columnProduct].strip()
+            sku = str(row[columnSku]).strip()
+            priceRetail = str(row[columnPriceRetail]).strip()
+            priceDealer = str(row[columnPriceDealer]).strip()
+                        
+            #log.debug('%s %s %s %s %s %s', product, sku, priceRetail, saleOff, priceDealer, balance)
+            
+            invalidStr = ''
+            
+            priceIdx = str(rownum + 1)
+            
+            #log.info("!!! '%s' '%s'", product, sku)
+                            
+            if product and not sku : # and not priceRetail and not numberInPrice and not balance 
+                currentCategory = product
+                log.debug('set current category: %s' % currentCategory)
+                
+                continue 
+
+            balance = int(row[columnBalance])
+
+            if len(sku) <= 3:
+                invalidStr = 'too poor sku "%s" (%s)' % (sku, priceIdx)
+                invalidSkus.append(sku)
+
+            if not product:
+                invalidStr = 'empty product' 
+                invalidSkus.append(sku)
+                
+
+            if not priceRetail:
+                                    
+                invalidStr = 'empty priceRetail'
+                invalidSkuPrice.append(sku)
+
+            if not priceDealer:
+                invalidStr = 'empty priceDealer'
+                invalidSkuPrice.append(sku)
+            
+            if invalidStr:
+                log.warn('[!] %s; %s; %s; %s; %s; %s; [invalid: %s]' % (priceIdx, sku, 
+                          priceRetail, priceDealer, currentCategory, product, invalidStr))
+                continue
+
+            
+            element = {'sku': sku, 
+                       'priceRetail': priceRetail,
+                       'priceDealer': priceDealer,
+                       'balance': balance,
+                       'categoryFromPrice': currentCategory,
+                       'productFromPrice': product,
+                       'priceSale': ''}
+
+            if not sku in result.keys():
+            
+                result[sku] = element
+            else:
+                raise ValueError('duplicate sku %s' % sku)
+
+        log.debug('----------------------------------------- table dump end   -----------------------------------------')
+
+        log.debug('%s price processed\n total rows: %d, skus: %d, invalid skus: %d, invalid price in sku %d' % (
+            xlsPath, sheet.nrows, len(result.keys()), len(invalidSkus), len(invalidSkuPrice)))
+        
+        if saleOffCount:
+            log.debug('[*] sale off count = %d', saleOffCount)
+
+        log.info('price successfully read: %s', xlsPath)
+
+        return result
+
+    def GetOptions(self, soup, sku, all):
+        
+        assert(len(sku.split('.')) > 1)
+        
+        result = {}
+        
+        # check sizes
+        
+        last = sku.split('.')[-1]
+        
+        divs = soup.find("div")
+        res = ''
+        for d in divs:
+            
+            if "SIZES" in d.text:
+                res = d
+                break
+        
+        sizeResult = ''
+        sizes = ''
+        
+        fd = re.findall(">(.*?)<", str(res), re.M | re.DOTALL)
+        
+        for a in fd:
+            size = a.strip()
+                        
+            if not size:
+                continue
+            else:
+              
+                size = size.replace('.', '')
+                size = size.replace(u'\xa0', '')
+                sp = size.split(" ")
+
+#                 if sku == '0022580.318.030':
+#                     print("'%s'" % size)
+                       
+                sizes += size + ','
+                    
+                if last.strip() in sp:
+                    sizeResult = sp[0].strip()
+                    
+                    if sizeResult == '-':
+                        sizeResult = last.strip()
+                    
+                    log.debug("size found: %s", size)
+                    break        
+    
+        if not sizeResult and res:
+            
+            if re.search("sizes from \d+ to \d+", str(res.text)):
+                sizeResult = str(int(last))
+            
+            
+    
+#         if sku == '0022580.318.030':
+#             exit(1)
+                
+
+
+        # check colors
+                
+        find = soup.find_all("div", class_="prod-colors-custom-detail")
+        color = ''
+        colorAdd = ''
+        colors = ''
+        galId = ''
+        isComplexColor = False
+        
+        for c in find:
+            
+            colors += c.span.text.strip()
+            
+            sp = c.span.text.split(" - ")            
+            colorPart = sp[0].strip()
+            
+            if '.' in colorPart:
+                isComplexColor = True
+            
+            s = "\.%s(\.\d+)*$" % colorPart
+            log.debug("search: '%s' '%s'" % (s, sku))
+            m = re.search(s, sku)
+            if m:
+                color = colorPart
+                colorAdd = sp[1].strip()
+                
+                onclick = c.a["onclick"]
+                
+                m = re.search("\((\d+),", onclick)
+                
+                galId = m.group(1).strip()
+                
+                
+                break
+                 
+            
+        if color:
+            log.debug("color verified: %s (%s)", s, sku)
+            
+        if not color:
+            raise WebSearchSkuNotMatched(colors, sku)
+        
+        assert(color)
+        assert(colorAdd)
+        assert(galId)
+            
+        # extract all image of colors 
+        
+        log.debug("galId = %s", galId)   
+                
+        images = []    
+        for li in all.find_all("li", attrs={"data-color": galId}):
+            images.append(li['data-image'].replace('/big/', '/medium/'))
+                
+        log.debug("images: %s", images)
+        assert(images)
+            
+        result = {"images": images,
+                  "color": colorAdd,
+                  "colors": colors,
+                  "size": sizeResult,
+                  "sizes": sizes}
+        
+        if len(sku.split('.')) == 3 and not isComplexColor:
+            if not sizeResult:
+                log.error("NO SIZE: sku %s, color %s, size %s, colors %s, sizes %s",
+                  sku, colorAdd, sizeResult, colors, sizes)
+                log.error(res)
+                
+        log.debug("web parsed: sku %s, color %s, size %s, colors %s, sizes %s",
+                  sku, colorAdd, sizeResult, colors, sizes)
+        
+        return result
+
+    def GetInfoAcerbis(self, element):
+        
+        cache = HttpPageCache('acerbis-com')
+        
+        cacheJson = HttpPageCache('acerbis-com-json', dbFile='values-json.db')
+        jsonResult = cacheJson.get(element['sku'])
+        if jsonResult:
+            return json.loads(jsonResult)
+
+         
+        baseUrl = conf.ACERBIS_HOST
+        searchUrl = baseUrl + '/motorsport/en/product/details/'
+        
+        session = requests.Session()
+
+        
+        req = element['sku']
+        req = req.split('.')[0]
+        
+        searchUrl += req 
+
+        req = requests.Request('GET', searchUrl)
+        prepped = session.prepare_request(req)
+        
+        
+        cached = cache.get(prepped.url)         
+        if not cached:
+            resp = session.send(prepped)
+            
+            log.debug('%s -> %s', prepped.url, resp.status_code)
+            
+            cached = resp.text
+            cache.put(prepped.url, cached)
+        
+        soup = BeautifulSoup(cached, 'lxml')
+    
+        productsFound = soup.findAll("div", { "class" : "item-container"})
+        
+        if not productsFound:
+            raise WebSearchNotFound('can not find any results (%s)' % element['sku'])
+
+        if len(productsFound) != 1:
+            msg = '[acerbis] more than one result found (%d items) for "%s"' % (len(productsFound), 
+                                                                      element['sku'])
+            log.warn(msg)
+        
+        product = productsFound[0]
+                    
+        webElement = {}
+        webElement['category'] = ''
+        webElement['sku'] = element['sku']
+        webElement['saleOffPercent'] = ''
+        webElement['product'] = ''
+        webElement['description'] = ''
+        webElement['images'] = ''
+        webElement['option'] = ''
+        webElement['seoUrl'] = '' # there is no seo in url
+        webElement['options'] = {} # optional
+        webElement['brand'] = 'Acerbis'
+        
+        # find category
+        
+        category = ''
+        
+        n = product.h1.text.strip()
+        webElement['product'] = n
+        
+        m = re.match("%s (.*?) | Acerbis" % n, soup.title.text)
+        if m:
+            category = str(m.group(1)).strip()
+        else:
+            raise WebSearchNoCategory(n, soup.title.text, element['sku'])
+
+            
+        webElement['category'] = category + '|' + element['categoryFromPrice'].replace('ACERBIS- ', '')
+            
+        urlCat = soup.find("link", attrs={"rel": "canonical"})
+        
+        m = re.search("/product/(.*?)/%s" % element['sku'].split('.')[0],
+                      urlCat['href'])
+        
+        cutCat = m.group(1)
+        
+        log.debug("canonical category = '%s'" % cutCat)
+        
+        webElement['category'] = cutCat
+        
+        webElement['product'] += ' ' + category
+        
+        # product-shortdesc
+        
+        # description
+        
+        def rem(m):
+            return m.group(0).replace(m.group(1), '')
+        
+        s = str(soup.find("div", class_="product-shortdesc"))
+        
+        webElement['description'] += re.sub("<[a-z]+(\s.*?)>", rem, s, re.M | re.DOTALL)
+        webElement['description'] += "<br/>"
+           
+        s = str(soup.find("div", class_="product-description"))
+        webElement['description'] += re.sub("<[a-z]+(\s.*?)>", rem, s, re.M | re.DOTALL)
+        
+        webElement['description'] = webElement['description'].replace("<a>", '')
+        webElement['description'] = webElement['description'].replace("</a>", '')   
+    
+        t = '<a href="http://www.acerbis.it/motorsport/en/product/details/%s">' \
+            '%s</a>' % (element['sku'].split('.')[0], soup.find("span", class_="product-cod").text)
+                        
+        webElement['description'] += "<br/>" + t + "<br/>"
+        
+        # options & images
+        
+        option = ''
+        sku = ''
+        
+        skul = len(element['sku'].split('.'))
+        
+        if skul == 3 or skul == 2:
+            
+            # options: color and/or size
+            
+            d = soup.find("div", { "class" : "product-description"})
+            
+            opts = self.GetOptions(d, element['sku'], soup)
+            assert(opts)
+            
+            webElement['images'] = opts['images']
+            
+            if opts.get('size', False):
+                webElement['option'] = opts['size']
+                webElement['options'] = {"": opts['sizes']}
+                webElement['product'] += ' ' + opts['color']
+                
+            else:
+                assert(opts['color'])
+                
+                webElement['option'] = opts['color']
+                webElement['options'] = {"": opts['colors']}
+                
+                
+            if '-' in webElement['option']:
+                raise WebSearchInvalidOption("sku '%s', option = '%s'", element['sku'],
+                                            webElement['option'])
+        
+            
+        elif skul == 1:
+            
+            # no options at all
+            
+            sku = element['sku']
+            images = []    
+            for li in soup.find_all("li", attrs={"data-color"}):
+                images.append(li['data-image'].replace('/big/', '/medium/'))
+            
+        else: 
+            
+            raise WebSearchSkuNotMatched("%s", element['sku'])
+            
+        webElement['seoUrl'] = webElement['product'].replace(' ', '-') + '-' + webElement['brand']
+              
+        cacheJson.put(element['sku'], json.dumps(webElement))
+        
+        return webElement
+        
+    def GrabWebData(self, priceData):
+        
+        assert(priceData)
+        
+        webData = {}
+        
+        i = 0
+        notFoundCount = 0
+        notMatchedCount = 0
+        notFoundCountOrig = 0
+        noDescriptionOrig = 0
+        noDescription = 0
+        m = len(priceData.keys())
+        for sku in priceData.keys():
+             
+            i += 1             
+            
+            sys.stdout.write('%d/%d\r' % (i, m))
+            sys.stdout.flush()
+            
+            notFound = False
+             
+            
+            try:
+                
+                element = self.GetInfoAcerbis(priceData[sku])
+            except WebSearchSkuNotMatched as ex:
+                log.error("invalid sku %s", ex)
+                
+                notMatchedCount += 1
+                continue
+                
+            except WebSearchNoCategory as ex:
+                log.error("parsing error %s", ex)
+                notFoundCount += 1
+                notFoundCountOrig += 1
+                continue
+
+            
+
+            assert(element)
+            assert(not sku in webData.keys())
+             
+                       
+            assert(element['images'])
+            
+            webData[sku] = element
+            
+        log.info('web grab for acerbis completed')
+        log.info('searched for %d items, not found orig - %d, not found total %d, ' \
+                 'not matched %d, no description orig %d, no description total %s', 
+                 i, notFoundCountOrig, notFoundCount, notMatchedCount, noDescriptionOrig,
+                 noDescription)
+        
+        return webData
+
+
+
 
 class testDirectoriesZhovtuha(unittest.TestCase):
     
@@ -2784,7 +3530,6 @@ class testDirectoriesZhovtuha(unittest.TestCase):
         def walkDummy(root, files):                 
             yield (root, None, files)
 
-        
         #
         # sort test
         #
@@ -2912,104 +3657,50 @@ class testDirectoriesKopyl(unittest.TestCase):
         walkMock.assert_called_with(root)
         self.assertEqual(len(walkMock.mock_calls), 1)
 
-        
-class OFF_testPriceDownloadKopyl(unittest.TestCase):
+
+
+
+class testProcessCycleZhovtuha(unittest.TestCase):
     
     def runTest(self):
         
-        
-        log.info('kopyl download test')
-        
-        kop = MXShopKopyl()
-        
-        r = kop.DownloadCurrentPriceFromWeb()
-        
-        self.assertTrue(r)
-        
-class OFF_testPriceDownloadZhovtuha(unittest.TestCase):
-    
-    def runTest(self):
-        
-        log.info('zhovtuha download test')
-        
+
         zhov = MXShopZhovtuha()
-        r = zhov.DownloadCurrentPriceFromWeb()
-            
-        self.assertTrue(r)
         
-class OFF_testReadPriceFromFileZhovtuha(unittest.TestCase):
-    
-    def runTest(self):
+        log.info('%s cycle test' % zhov._d)        
         
-        log.info('zhovtuha read test')
-        
-        testPricePath = os.path.join('prices', 'test', 'zhovtuha', 'Остатки-24.01.17.xls')
-        
-        zhov = MXShopZhovtuha()
-
-        priceData = zhov.ReadPrice(testPricePath)
-        
-        # TODO: add more precise assertions 
-        
-        self.assertTrue(priceData)
-
-
-class OFF_testReadPriceFromFileKopyl(unittest.TestCase):
-    
-    def runTest(self):
-        
-        log.info('kopyl read test')
-        
-        testPricePath = os.path.join('prices', 'test', 'kopyl', 'dealer_price_2017-02-04 22.49.00-xls2003.xls')
-        
-        kop = MXShopKopyl()
-
-        priceData = kop.ReadPrice(testPricePath)
-        
-        self.assertTrue(priceData)
-
-
-class testProcessCycleKopyl(unittest.TestCase):
-    
-    def runTest(self):
-        
-
-        kop = MXShopZhovtuha()
-        
-        log.info('%s cycle test' % kop._d)        
-        
-        remoteXmlFile = kop.WebAdminGetRemoteXmlName()
+        remoteXmlFile = zhov.WebAdminGetRemoteXmlName()
                 
-        data, fileName, currencyRate = kop.DownloadCurrentPriceFromWeb()
+        data, fileName, currencyRate = zhov.DownloadCurrentPriceFromWeb()
                 
         log.info('price downloaded: %s', fileName)
          
-        xlsFilePath = os.path.join('prices', 'orig', kop._d, fileName)
-        xmlFilePath = os.path.join('prices', 'result', kop._d, 
+        xlsFilePath = os.path.join('prices', 'orig', zhov._d, fileName)
+        xmlFilePath = os.path.join('prices', 'result', zhov._d, 
                                       os.path.splitext(fileName)[0] + '.xml')
          
         newFilePath = os.path.join(_CACHE_PATH, os.path.splitext(fileName)[0] + '.xml')
                  
         FileHlp(xlsFilePath, 'w').write(data)
          
-        r = kop.ConvertTo97Xls(xlsFilePath, newFilePath)
+        r = zhov.ConvertTo97Xls(xlsFilePath, newFilePath)
         self.assertTrue(r)
          
-        priceData = kop.ReadPrice(newFilePath)
+        priceData = zhov.ReadPrice(newFilePath)
         self.assertTrue(priceData)
         os.remove(newFilePath)
           
-        webData = kop.GrabWebData(priceData)
+        webData = zhov.GrabWebData(priceData)
         self.assertTrue(webData)
           
-        kop.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
+        zhov.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
           
-        kop.UploadToServer(xmlFilePath, '%s/%s' % (kop._remoteUploadDir, remoteXmlFile))
+        zhov.UploadToServer(xmlFilePath, '%s/%s' % (zhov._remoteUploadDir, remoteXmlFile))
            
         for idx in range(0, 9):
                
             try:  
-                kop.WebAdminRunPrice()
+                zhov.WebAdminRunPrice()
                 break
             except AdminNeedContinue:                
                 log.info('not all data processed, make another request...')
@@ -3017,15 +3708,80 @@ class testProcessCycleKopyl(unittest.TestCase):
                 idx += 1
                 continue
             
-        kop.DownloadFromServer('%s/errors.tmp' % kop._remoteUploadDir,
+        zhov.DownloadFromServer('%s/errors.tmp' % zhov._remoteUploadDir,
                                 os.path.join(_CACHE_PATH, 'errors.txt'))
       
-        kop.DownloadFromServer('%s/report.tmp' % kop._remoteUploadDir,
+        zhov.DownloadFromServer('%s/report.tmp' % zhov._remoteUploadDir,
                                 os.path.join(_CACHE_PATH, 'report.txt'))
            
-        kop.AnalyzeErrorsTmp(os.path.join(_CACHE_PATH, 'errors.txt'))        
-        kop.AnalyzeReportTxt(os.path.join(_CACHE_PATH, 'report.txt'))
+        zhov.AnalyzeErrorsTmp(os.path.join(_CACHE_PATH, 'errors.txt'))        
+        zhov.AnalyzeReportTxt(os.path.join(_CACHE_PATH, 'report.txt'))
+      
+class testProcessCycleLob(unittest.TestCase):
+    
+    def runTest(self):
         
+
+        lob = MXShopLob()
+        
+        log.info('%s cycle test' % lob._d)        
+        
+        remoteXmlFile = lob.WebAdminGetRemoteXmlName()
+                
+        datas, fileNames, currencyRate = lob.DownloadCurrentPriceFromWeb()
+        
+        priceData = None
+
+        for fileName, data in zip(fileNames, datas):
+            
+          
+            xlsFilePath = os.path.join('prices', 'orig', lob._d, fileName)
+            xmlFilePath = os.path.join('prices', 'result', lob._d, 
+                                           os.path.splitext(fileName)[0] + '.xml')
+              
+            newFilePath = os.path.join(_CACHE_PATH, os.path.splitext(fileName)[0] + '.xml')
+                  
+            FileHlp(xlsFilePath, 'w').write(data)
+          
+            r = lob.ConvertTo97Xls(xlsFilePath, newFilePath)
+            self.assertTrue(r)
+
+            priceData = lob.ReadPrice(newFilePath, existingPrice=priceData)
+            self.assertTrue(priceData)
+            os.remove(newFilePath)
+           
+        webData = lob.GrabWebData(priceData)
+        self.assertTrue(webData)
+        
+        
+        ## temp
+   
+        
+        #lob.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
+        
+        
+           
+        lob.UploadToServer(xmlFilePath, '%s/%s' % (lob._remoteUploadDir, remoteXmlFile))
+            
+        for idx in range(0, 9):
+                
+            try:  
+                lob.WebAdminRunPrice()
+                break
+            except AdminNeedContinue:                
+                log.info('not all data processed, make another request...')
+                    
+                idx += 1
+                continue
+             
+        lob.DownloadFromServer('%s/errors.tmp' % lob._remoteUploadDir,
+                                os.path.join(_CACHE_PATH, 'errors.txt'))
+       
+        lob.DownloadFromServer('%s/report.tmp' % lob._remoteUploadDir,
+                                os.path.join(_CACHE_PATH, 'report.txt'))
+            
+        lob.AnalyzeErrorsTmp(os.path.join(_CACHE_PATH, 'errors.txt'))        
+        lob.AnalyzeReportTxt(os.path.join(_CACHE_PATH, 'report.txt'))  
 
 class OFF_testProcessCycleZhovtuha(unittest.TestCase):
     
@@ -3076,320 +3832,7 @@ class OFF_testProcessCycleZhovtuha(unittest.TestCase):
         
         
 
-class OFF_testEmptyDescriptionZhovtuha(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        element = {'sku': '2058-350-036'}
-        
-        r = zhov.GetInfoMotocrazytownComUa(element)        
-        
-        self.assertFalse(repr(r['description']))
-
-        
-class OFF_testMultipleFoundZhovtuha(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        element = {'sku': '70002'}
-        
-        r = zhov.GetInfoMotocrazytownComUa(element)
-        
-        self.assertTrue(r)
-
-class OFF_testMultipleNotFoundZhovtuha(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        element = {'sku': '7000'}
-        
-        isException = False
-        
-        try:
-            zhov.GetInfoMotocrazytownComUa(element)
-        except WebSearchSkuNotMatched:
-            isException = True
-        
-        self.assertTrue(isException)
-        
-        
-class OFF_testMultipleFoundMotostyle(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        element = {'sku': '70002'}
-        
-        r = zhov.GetInfoMotostyleComUa(element)
-        
-        self.assertTrue(r)
-
-class OFF_testMultipleNotFoundMotostyle(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        element = {'sku': '7000'}
-        
-        isException = False
-        
-        try:
-            zhov.GetInfoMotostyleComUa(element)
-        except WebSearchSkuNotMatched:
-            isException = True
-        
-        self.assertTrue(isException)
-               
-        
-            
-class OFF_testGetFromWebMotostyleComUa(unittest.TestCase):
-    
-    def runTest(self):
-        
-        testPricePath = os.path.join('prices', 'test', 'zhovtuha', 'Остатки-24.01.17.xls')
-        
-        zhov = MXShopZhovtuha()
-        priceData = zhov.ReadPrice(testPricePath)
-
-        notFoundSku = ['101019000084',
-            'RSF3-AXIUM-L',
-            '165 3329 XL 101',
-            'FA185TT',
-            '165 2051 XL 101',
-            'MD6017D',
-            '8117732120844 BLACK 45',
-            'FORV180-98 white 46',
-            '190 6183 XL 101',
-            'RSJ2519900XXL',
-            'BTLCRY BLK LG',
-            '165 3605 XL 180',
-            '310157',
-            '1017807041040',
-            'YZF600R6',
-            'BLACK\RED',
-            'MD6255C',
-            'FORT71W-9998800 black/white/camo 46',
-            'FORT71W-9998800 black/white/camo 45',
-            'FORT71W-9998800 black/white/camo 44',
-            'FORT71W-9998800 black/white/camo 43',
-            'FORT71W-9998800 black/white/camo 42',
-            'PLV078S',
-            'DIAC590 XXL',
-            'RSJ266150003XL',
-            '1011536060020',
-            'FORV150-10 red 42',
-            '1012862020030',
-            '165 3246 XS 810',
-            '1012864010030',
-            'TRV0379900',
-            '17 13 001 0',
-            'Merc',
-            'FA185X',
-            '1010800013320',
-            'FORT750-99 S\M',
-            'DIAC530 XXL',
-            '2810-1465',
-            '190 6202 XL 101',
-            'VR-2 WIZARD M',
-            '1012866020020',
-            'KSHA00W3.4',
-            'FORC29W-99 black 42',
-            'FORC29W-99 black 41',
-            'FORC29W-99 black 40',
-            '2840-0042',
-            'RSJ2669900XL',
-            '1231-0222',
-            '2855-0072',
-            '1012881020030',
-            '2839-007-008',
-            '1657012180',
-            '1010800013310',
-            '1015129010020',
-            'RSJ2579994    3XL',
-            '165 3248  S 870',
-            '1011536010030',
-            '2855-0037',
-            'KSHA0006.4',
-            '14 06 171 3',
-            '1017805041010',
-            'FGS051-2250 blue/black L',
-            '2152-304-063',
-            '091095000211',
-            'FGS051-2000 red/black L',
-            'MD6037C',
-            '190 6203  L 101',
-            '1010105-XL',
-            '2063-301-034',
-            '1012864010020',
-            'Overlord',
-            '190 6204 XS 101',
-            '1657016180',
-            '11 11 110 5',
-            '1014103362042',
-            '20-262-02',
-            '165 1303 XL 331',
-            'FORC420-981011 white/red/blue 45',
-            '330706',
-            '2706-0070',
-            '14 06 178 5',
-            '1014106363042',
-            '1231-0273',
-            'MCT-XL',
-            'KSCT00W6.6',
-            '2839-007-005',
-            '2839-007-007',
-            '2839-007-006',
-            'Taichi Dyna BLACK M',
-            'SM6264C',
-            '2833-001-008',
-            '165 3329 XXL 101',
-            '190 6203 XL 101',
-            'DIAV210-10 RED 42',
-            'FORC370-98 white 37',
-            '80279',
-            '1011536060040',
-            '1017805040010',
-            '2840-0043',
-            'DIAC540 S',
-            'FORT64W-99 black 42',
-            'FGS046-0010 black L',
-            '165 3246  M 110',
-            '203088',
-            '2839-010-008',
-            '2839-010-007',
-            '2839-010-006',
-            'FORT87W-99 black 44',
-            'FORT87W-99 black 45',
-            'FORT87W-99 black 42',
-            'FORT87W-99 black 43',
-            'DIAC530 S',
-            '2831-0045',
-            '2810-005-011',
-            'RSJ821-LAMB BROWN-L',
-            'RSJ2709926XXL',
-            'MERCSTAGE2',
-            'Revit GT BLACK 48',
-            'SILVER\BLACK',
-            'FORV150-10 red 38',
-            '1011536060030',
-            '1012862020020',
-            '2000000000626 BLACK 43',
-            'FORW160-99 black 47',
-            '42100-27820',
-            '1015129010040',
-            'MD6246C',
-            'RSJ8259915 XL',
-            '1011536010040',
-            '8117732070842 BLACK 42',
-            'MCT-L',
-            '1011536230060',
-            'Superduty',
-            '165 3246  L 810',
-            'FJT083 3520 XXL',
-            '93562187',
-            '1017806040040',
-            'RSJ2759900M',
-            '165 3246  S 110',
-            'Icon Titan M',
-            'RSB264 Black',
-            '050042000001',
-            'RSI EDEN XL',
-            '8117732100846 BLACK 44']
-
-        for sku in notFoundSku:
-            
-            try:
-                motocrzyElement = zhov.GetInfoMotostyleComUa(priceData[sku])
-            except WebSearchNotFound as notFound:
-                log.warn('[!] %s' % str(notFound))
-                continue
-            except WebSearchSkuNotMatched as notMatched:
-                log.warn('[!] %s' % str(notMatched))
-                continue
-                
-            
-
-class OFF_testGetFromWebMotoKopylbrosCom(unittest.TestCase):
-    
-    def runTest(self):
-        
-        log.info('get info from kop...com test')
-        
-        testPricePath = os.path.join('prices', 'test', 'kopyl', 'dealer_price_2017-02-04 22.49.00-xls2003.xls')
-        
-        kop = MXShopKopyl()
-        priceData = kop.ReadPrice(testPricePath)
-
-        i = 0
-        notFoundCount = 0
-        skuNotMatched = 0
-        noImages = 0
-        
-        keysLen = len(priceData.keys())
-        
-        for sku in priceData.keys():
-             
-            i += 1
-             
-            log.debug('%d/%d', i, keysLen)
-             
-            try:
-                element = kop.GetInfoMotoKopylbrosCom(priceData[sku])
-            except WebSearchNotFound as ex:
-                
-                try:
-                    element = kop.GetInfoMotoKopylbrosCom(priceData[sku], searchWithName=1)
-                except WebSearchNotFound as ex2:
-                    ex = ex2
-                    
-                notFoundCount += 1
-                log.warning('[!] %s', (str(ex)))
-                raise ex
-                
-            except WebSearchSkuNotMatched as ex:
-                skuNotMatched += 1
-                log.warning('[!] %s', (str(ex)))
-                raise ex                
-             
-            self.assertTrue(element)
-            if not element['images']:
-                noImages += 1
-                assert(False)
-            
-        log.info('web grab for kopyl completed')
-        log.info('searched for %d items, sku not matched - %d, not found - %d', i, skuNotMatched, notFoundCount)
-
-class OFF_testMakeUpXmlZhovtuha(unittest.TestCase):
-    
-    def runTest(self):
-        
-        xmlFilePath = os.path.join('prices', 'test', 'zhovtuha', 'makeup-test.xls')
-        
-        zhov = MXShopZhovtuha()
-        priceData = zhov.ReadPrice(xmlFilePath)
-        
-        webData = zhov.GrabWebData(priceData)
-        self.assertTrue(webData)
-        
-        zhov.CreateXmlFile(priceData, webData, '/home/vasya/Dropbox/out.xml')
-
-class OFF_testMakeUpXmlZhovtuha1(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        
-        priceData, fileName, currencyRate = zhov.DownloadCurrentPriceFromWeb() 
-        
-        pp = os.path.join('prices', 'orig', 'zhovtuha', fileName)
-        
-        FileHlp(pp, 'w').write(priceData)
-        
-        log.info('file write ok: %s, currency: %f', pp, currencyRate)
-                
+  
 
 class testMakeUpXmlKopyl2(unittest.TestCase):
     
@@ -3418,64 +3861,8 @@ class testMakeUpXmlKopyl2(unittest.TestCase):
 
 
 
-class OFF_testMakeUpXmlZhovtuha2(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        
-        #priceData, fileName, currencyRate = zhov.DownloadCurrentPriceFromWeb() 
-        fileName = 'Остатки-15.03.17.xls'#'Остатки-23.02.17.xls'
-        
-        
-        pp = os.path.join('prices', 'orig', 'zhovtuha', fileName)
-        
-        #FileHlp(pp, 'w').write(priceData)
-        
-        log.info('file write ok: %s', pp)
-        
-        priceData = zhov.ReadPrice(pp)
-        
-        webData = zhov.GrabWebData(priceData)
-        self.assertTrue(webData)
-        
-        outFile = '/home/vasya/Dropbox/out.xml'
-        
-        zhov.CreateXmlFile(priceData, webData, outFile, 27.5)
-        
 
-class OFF_testZhovtuhaIteractWithAdmin(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
 
-        outFile = '/home/vasya/Dropbox/out.xml'
-          
-        zhov.UploadToServer(outFile, './public_html/newtest/admin/uploads/4.xml')         
-        zhov.WebAdminRunPrice()
-         
-        zhov.DownloadFromServer('./public_html/newtest/admin/uploads/errors.tmp',
-                                os.path.join(_CACHE_PATH, 'errors.txt'))
-  
-   
-        zhov.DownloadFromServer('./public_html/newtest/admin/uploads/report.tmp',
-                                os.path.join(_CACHE_PATH, 'report.txt'))
-         
-         
-        zhov.AnalyzeErrorsTmp(os.path.join(_CACHE_PATH, 'errors.txt'))
-        
-        zhov.AnalyzeReportTxt(os.path.join(_CACHE_PATH, 'report.txt'))
-        
-        
-class OFF_testZhovtuhaFixCategories(unittest.TestCase):
-    
-    def runTest(self):
-        
-        zhov = MXShopZhovtuha()
-        
-        zhov.WebAdminFixCategories()
-        
 class testDoWaterMarkKopyl(unittest.TestCase):
     
     def runTest(self):
@@ -3530,6 +3917,15 @@ class testXml(unittest.TestCase):
         log.info(xml.getdata())
         
         
+         
+class testFinanceUa(unittest.TestCase):
+    
+    def runTest(self):
+        
+        lob = MXShopLob()
+
+        lob.GetCurrencyFinanceEu()
+        
 class OFF_testConvertToXls2003(unittest.TestCase):
     
     def runTest(self):
@@ -3550,32 +3946,42 @@ def ProcessMain(dealer, **kw):
     
     remoteXmlFile = dealer.WebAdminGetRemoteXmlName()
             
-    data, fileName, currencyRate = dealer.DownloadCurrentPriceFromWeb()
+    datas, fileNames, currencyRate = dealer.DownloadCurrentPriceFromWeb()
     
-    log.info('price downloaded: %s', fileName)
-     
-    xlsFilePath = os.path.join(dealer._pricesOrigDir, fileName)
-    xmlFilePath = os.path.join(dealer._pricesResutDir, os.path.splitext(fileName)[0] + '.xml')
-     
-    newFilePath = os.path.join(_CACHE_PATH, os.path.splitext(fileName)[0] + '.xml')
-             
-    FileHlp(xlsFilePath, 'w').write(data)
+    if type(fileNames) is not list:
+        fileNames = [fileNames]
+        datas = [datas]
+        
+    log.info('price download: %s', ' '.join(fileNames))
+        
+    priceData = None
     
     cachedXml = kw.get('cachedXml', None)
-    if not cachedXml:        
-     
-        r = dealer.ConvertTo97Xls(xlsFilePath, newFilePath)
-        assert(r)
-         
-        priceData = dealer.ReadPrice(newFilePath)
-        assert(priceData)
-        os.remove(newFilePath)
-          
+    if not cachedXml:   
+            
+        for fileName, data in zip(fileNames, datas):    
+            
+            log.info("'%s' '%s'" , dealer._pricesOrigDir, fileName)
+        
+            xlsFilePath = os.path.join(dealer._pricesOrigDir, fileName)
+            xmlFilePath = os.path.join(dealer._pricesResutDir, os.path.splitext(fileName)[0] + '.xml')
+             
+            newFilePath = os.path.join(_CACHE_PATH, os.path.splitext(fileName)[0] + '.xml')
+                     
+            FileHlp(xlsFilePath, 'w').write(data)
+            
+            r = dealer.ConvertTo97Xls(xlsFilePath, newFilePath)
+            assert(r)
+             
+            priceData = dealer.ReadPrice(newFilePath, existingPrice=priceData)
+            assert(priceData)
+            os.remove(newFilePath)
+              
         webData = dealer.GrabWebData(priceData)
         assert(webData)
           
         dealer.CreateXmlFile(priceData, webData, xmlFilePath, currencyRate)
-        
+            
     else:
         log.info("using cached xml: %s", cachedXml)
         xmlFilePath = cachedXml
@@ -3585,7 +3991,7 @@ def ProcessMain(dealer, **kw):
         return  
     
     dealer.UploadToServer(xmlFilePath, '%s/%s' % (dealer._remoteUploadDir, remoteXmlFile),
-                          addDockerPrefix=True)
+                          addDockerPrefix=True, changePermissions=True, removeTmpXml=True)
        
     for idx in range(0, 9):
            
@@ -3597,6 +4003,8 @@ def ProcessMain(dealer, **kw):
                
             idx += 1
             continue
+        
+    
         
     dealer.DownloadFromServer('%s/errors.tmp' % dealer._remoteUploadDir,
                             os.path.join(_CACHE_PATH, 'errors.txt'),
@@ -3644,6 +4052,11 @@ if __name__ == "__main__":
                       action="store", dest="cachedXml", default='',
                       help="use cached xml instead of generating new")
 
+    parser.add_option("-w", "--watermarksOnly",
+                      action="store_true", dest="watermarksOnly", default=False,
+                      help="Build watermarks only")
+
+
 # TODO:
 #     parser.add_option("-w", "--watermark=USER1,USER2,...", type="string",
 #                       action="store", dest="watermark", default=False,
@@ -3681,13 +4094,26 @@ if __name__ == "__main__":
             
             dealer = MXShopKopyl(useTestingServer=options.useTestingServer)
             
-            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
-                         cachedXml=options.cachedXml)
-            
+            if not options.watermarksOnly:
+                ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
+                             cachedXml=options.cachedXml)
+            else:
+                log.info("Do only watermarks...")
+                
             if not options.noUploadToAdmin:
             
-                dealer.AddWaterMarkToAllImages()
+                dealer.AddWaterMarkToAllImages(cleanFiles=False)
                         
+            del(dealer)
+            
+        if 'lob' in options.buildPrices.split(','):
+            
+            dealer = MXShopLob(useTestingServer=options.useTestingServer)
+            ProcessMain(dealer, noUploadToAdmin=options.noUploadToAdmin,
+                        cachedXml=options.cachedXml)
+            
+            dealer.RestartDockerContainter()
+            
             del(dealer)
 
         
