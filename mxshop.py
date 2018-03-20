@@ -3387,18 +3387,29 @@ class MXShopLob(MXShopZhovtuha):
         # description
         
         def rem(m):
-            return m.group(0).replace(m.group(1), '')
+            return m.group(1) + '>'
         
         s = str(soup.find("div", class_="product-shortdesc"))
+        r = re.sub("(<[a-z]+) .*?>", rem, str(s).replace('\xc2\xa0', ''), flags=re.MULTILINE + re.DOTALL)
         
-        webElement['description'] += re.sub("<[a-z]+(\s.*?)>", rem, s, re.M | re.DOTALL)
+        if '=' in r:
+            raise ValueError("invalid description: '%s'", r)
+        
+        webElement['description'] += r
         webElement['description'] += "<br/>"
            
         s = str(soup.find("div", class_="product-description"))
-        webElement['description'] += re.sub("<[a-z]+(\s.*?)>", rem, s, re.M | re.DOTALL)
+        r = re.sub("(<[a-z]+) .*?>", rem, str(s).replace('\xc2\xa0', ''), flags=re.MULTILINE + re.DOTALL)
+        if '=' in r:
+            raise ValueError("invalid description: '%s'", r)
+        webElement['description'] += r
         
         webElement['description'] = webElement['description'].replace("<a>", '')
-        webElement['description'] = webElement['description'].replace("</a>", '')   
+        webElement['description'] = webElement['description'].replace("</a>", '')
+        webElement['description'] = webElement['description'].replace("<img>", '')
+        webElement['description'] = webElement['description'].replace("</img>", '')   
+    
+
     
         t = '<a href="http://www.acerbis.it/motorsport/en/product/details/%s">' \
             '%s</a>' % (element['sku'].split('.')[0], soup.find("span", class_="product-cod").text)
